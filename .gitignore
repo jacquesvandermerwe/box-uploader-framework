@@ -1,0 +1,17 @@
+target/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.work/
+results/
+work/
+*.log
+.DS_Store
+
+# Profiles with secrets — never commit
+.box-upload-perf/
+config/profiles/
+**/profiles/*.yaml
+!config/config.example.yaml

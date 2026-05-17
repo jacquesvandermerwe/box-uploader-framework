@@ -1,0 +1,30 @@
+profile:
+  name: example-virtual
+  description: Example profile — copy to ~/.box-upload-perf/profiles/ and edit credentials
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "123456789"
+  userId: ""
+upload:
+  fileCount: 10
+  concurrency: 4
+  threadMode: VIRTUAL
+  chunkedUploadThresholdBytes: 52428800
+  chunkSizeBytes: 52428800
+pdf:
+  targetSizeBytes: 1048576
+work:
+  parentDirectory: "./work"
+  payloadFileName: "payload.pdf"
+run:
+  outputDirectory: "./results"
+cleanup:
+  deleteBoxRunFolderAfterRun: false
+  deleteLocalPayloadAfterRun: false
+metrics:
+  sampleIntervalMs: 500
+retry:
+  maxAttempts: 3
+  backoffMs: 500
