@@ -63,13 +63,51 @@ jpackage --input target \
   --java-options "--enable-native-access=ALL-UNNAMED"
 ```
 
-On macOS, run again with `--type dmg` (or use `scripts/jpackage-macos.sh`).
+On macOS, run again with `--type dmg` (or use `scripts/jpackage-macos.sh`). Add `--icon packaging/macos/box-upload-perf.icns` when you have a custom icon (see below).
+
+### Custom application icon (macOS)
+
+Without `--icon`, jpackage uses the default Java coffee-cup icon. macOS requires **`.icns`** (not PNG).
+
+**Recommended workflow:**
+
+1. Edit `packaging/macos/icon-source.svg` (vector, preferred) or replace `icon-source.png` (square 1024×1024).
+2. Generate the icon set:
+
+   ```bash
+   chmod +x scripts/make-macos-icon.sh
+   ./scripts/make-macos-icon.sh
+   ```
+
+   Output: `packaging/macos/box-upload-perf.icns`
+
+3. Rebuild: `./scripts/jpackage-macos.sh` (picks up the `.icns` automatically).
+
+**Already have an `.icns`?** Copy it to `packaging/macos/box-upload-perf.icns`, or:
+
+```bash
+BOX_UPLOAD_PERF_ICON=/path/to/YourIcon.icns ./scripts/jpackage-macos.sh
+```
+
+**Manual `jpackage` flag:**
+
+```bash
+jpackage ... --icon packaging/macos/box-upload-perf.icns
+```
+
+| Platform | Icon format |
+|----------|-------------|
+| macOS | `.icns` |
+| Windows | `.ico` |
+| Linux | `.png` |
+
+More detail: [packaging/macos/README.md](../packaging/macos/README.md).
 
 ### Build notes
 
 - **Platform-specific**: A macOS `.dmg` must be built on macOS. Same for Windows `.msi` / Linux `.deb` on their respective OSes.
 - **SQLite**: `--enable-native-access=ALL-UNNAMED` is set in the packaged launcher (Java 21+).
-- **Not included in repo builds**: custom `.icns` icon, Apple code signing, notarization. Unsigned builds may trigger Gatekeeper on first open (see [Gatekeeper and unsigned builds](#gatekeeper-and-unsigned-builds)).
+- **Optional**: custom `.icns` (see above); Apple code signing and notarization for production distribution. Unsigned builds may trigger Gatekeeper on first open (see [Gatekeeper and unsigned builds](#gatekeeper-and-unsigned-builds)).
 - **HTML charts**: `charts/index.html` loads Chart.js from a CDN; viewing charts in a browser needs network access.
 
 ### Distributing what you built

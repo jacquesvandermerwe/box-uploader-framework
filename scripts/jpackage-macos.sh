@@ -19,6 +19,7 @@ APP_NAME="box-upload-perf"
 MAIN_CLASS="com.boxuploadperf.BoxUploadPerfApp"
 DIST_DIR="$ROOT/target/dist"
 JAR="$ROOT/target/box-upload-perf-1.0.0-SNAPSHOT.jar"
+ICON="${BOX_UPLOAD_PERF_ICON:-$ROOT/packaging/macos/box-upload-perf.icns}"
 
 echo "==> Building fat JAR..."
 mvn -q package -DskipTests
@@ -46,6 +47,14 @@ JPACKAGE_COMMON=(
   --dest "$DIST_DIR"
   --java-options "--enable-native-access=ALL-UNNAMED"
 )
+
+if [[ -f "$ICON" ]]; then
+  JPACKAGE_COMMON+=(--icon "$ICON")
+  echo "==> Using app icon: $ICON"
+else
+  echo "==> No custom icon ($ICON); using default Java icon."
+  echo "    Add packaging/macos/icon-source.png and run ./scripts/make-macos-icon.sh"
+fi
 
 echo "==> Creating application image (.app)..."
 jpackage "${JPACKAGE_COMMON[@]}" --type app-image

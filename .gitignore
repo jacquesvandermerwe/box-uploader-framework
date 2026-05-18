@@ -2,6 +2,8 @@ target/
 # jpackage outputs (reproducible via scripts/jpackage-macos.sh)
 target/dist/
 target/jpackage*/
+packaging/macos/.icon-build*/
+packaging/macos/*.iconset/
 .idea/
 .vscode/
 *.iml
