@@ -11,11 +11,12 @@ For product requirements and schema detail, see [PRD.md](PRD.md).
 1. [How a run executes](#how-a-run-executes)
 2. [Startup delay before uploads](#startup-delay-before-uploads)
 3. [Console output and JVM warnings](#console-output-and-jvm-warnings)
-4. [Configuring a profile](#configuring-a-profile)
-5. [Example profiles](#example-profiles)
-6. [Running with a profile](#running-with-a-profile)
-7. [Run outputs and reports](#run-outputs-and-reports)
-8. [Example report excerpts](#example-report-excerpts)
+4. [Installing from a macOS package](#installing-from-a-macos-package)
+5. [Configuring a profile](#configuring-a-profile)
+6. [Example profiles](#example-profiles)
+7. [Running with a profile](#running-with-a-profile)
+8. [Run outputs and reports](#run-outputs-and-reports)
+9. [Example report excerpts](#example-report-excerpts)
 
 ---
 
@@ -141,6 +142,33 @@ java --enable-native-access=ALL-UNNAMED -jar target/box-upload-perf-1.0.0-SNAPSH
 ```
 
 These messages are **not** upload failures and do not indicate incorrect routing by themselves.
+
+For the **packaged macOS app**, `--enable-native-access=ALL-UNNAMED` is already set in the bundle launcher; you do not need to pass it manually.
+
+---
+
+## Installing from a macOS package
+
+If you received `box-upload-perf-*.dmg` instead of a JAR, you do **not** need Java installed on the machine.
+
+| Topic | Where to read |
+|-------|----------------|
+| Install from DMG, Gatekeeper, verify, uninstall | [PACKAGING.md — Installing on a target system](PACKAGING.md#installing-on-a-target-system) |
+| Build `.dmg` from source | [PACKAGING.md — Building a package](PACKAGING.md#building-a-package) |
+
+**Quick reference after install:**
+
+```bash
+# CLI inside the bundle (adjust path if not in /Applications)
+BOX=/Applications/box-upload-perf.app/Contents/MacOS/box-upload-perf
+
+$BOX --help
+$BOX wizard                    # first-time credentials and profile
+mkdir -p ~/box-benchmarks && cd ~/box-benchmarks
+$BOX run --profile my-benchmark # writes ./results/<runId>/
+```
+
+Profiles still live in `~/.box-upload-perf/profiles/`. Configuration, overrides, and reports are identical to the JAR workflow described in the rest of this guide.
 
 ---
 
