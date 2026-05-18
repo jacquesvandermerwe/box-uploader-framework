@@ -119,8 +119,8 @@ public final class BoxClient implements AutoCloseable {
             var result = sendWithRetry(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_SIMPLE, false, true,
                     request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
             NetworkTiming httpTiming = result.timing();
-            timing.transferMs = httpTiming.durationMs;
             timing.durationMs = httpTiming.durationMs;
+            timing.transferMs = httpTiming.transferMs;
             timing.timeToFirstByteMs = httpTiming.timeToFirstByteMs;
             timing.dnsLookupMs = httpTiming.dnsLookupMs;
             timing.tcpConnectMs = httpTiming.tcpConnectMs;
@@ -134,7 +134,7 @@ public final class BoxClient implements AutoCloseable {
             }
             String fileId = extractJsonField(new String(result.response().body()), "id");
             double e2e = (System.nanoTime() - startE2e) / 1_000_000.0;
-            return new UploadResult(fileId, timing.transferMs, e2e, 0, ancillary, had429, 0);
+            return new UploadResult(fileId, timing.durationMs, e2e, 0, ancillary, had429, 0);
         }
 
         return uploadChunked(db, runId, threadMode, uploadIndex, uploadGuid, fileName, fileBytes, parentFolderId, startE2e);

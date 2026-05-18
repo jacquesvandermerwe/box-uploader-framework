@@ -44,13 +44,13 @@ public final class InstrumentedHttpClient implements AutoCloseable {
         long end = System.nanoTime();
         double elapsedMs = (end - start) / 1_000_000.0;
 
-        timing.timeToFirstByteMs = elapsedMs;
         timing.durationMs = elapsedMs;
-        timing.transferMs = elapsedMs;
+        timing.timeToFirstByteMs = elapsedMs;
+        timing.transferMs = 0;
 
         if (!reused && timing.tcpConnectMs == 0) {
-            timing.tcpConnectMs = timing.timeToFirstByteMs * 0.2;
-            timing.tlsHandshakeMs = timing.timeToFirstByteMs * 0.35;
+            timing.tcpConnectMs = elapsedMs * 0.2;
+            timing.tlsHandshakeMs = elapsedMs * 0.35;
         }
 
         if (response.body() instanceof byte[] body) {
