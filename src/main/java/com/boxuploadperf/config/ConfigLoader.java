@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @SuppressWarnings("unchecked")
@@ -100,35 +101,60 @@ public final class ConfigLoader {
         return c;
     }
 
+    /** Mutable map tree for YAML dump and profile save (ProfileStore may add fields). */
     public static Map<String, Object> toMap(AppConfig c) {
-        return Map.of(
-                "profile", Map.of(
-                        "name", nullToEmpty(c.profileName),
-                        "description", nullToEmpty(c.profileDescription)),
-                "box", Map.of(
-                        "clientId", nullToEmpty(c.boxClientId),
-                        "clientSecret", nullToEmpty(c.boxClientSecret),
-                        "enterpriseId", nullToEmpty(c.boxEnterpriseId),
-                        "userId", nullToEmpty(c.boxUserId),
-                        "parentFolderId", nullToEmpty(c.boxParentFolderId),
-                        "runFolderName", nullToEmpty(c.boxRunFolderName)),
-                "upload", Map.of(
-                        "fileCount", c.uploadFileCount,
-                        "concurrency", c.uploadConcurrency,
-                        "threadMode", c.uploadThreadMode != null ? c.uploadThreadMode.name() : "",
-                        "chunkedUploadThresholdBytes", c.uploadChunkedUploadThresholdBytes,
-                        "chunkSizeBytes", c.uploadChunkSizeBytes),
-                "pdf", Map.of("targetSizeBytes", c.pdfTargetSizeBytes),
-                "work", Map.of(
-                        "parentDirectory", c.workParentDirectory.toString(),
-                        "payloadFileName", c.workPayloadFileName),
-                "run", Map.of(
-                        "runId", c.runId,
-                        "outputDirectory", c.runOutputDirectory.toString()),
-                "metrics", Map.of("sampleIntervalMs", c.metricsSampleIntervalMs),
-                "cleanup", Map.of(
-                        "deleteBoxRunFolderAfterRun", c.cleanupDeleteBoxRunFolderAfterRun,
-                        "deleteLocalPayloadAfterRun", c.cleanupDeleteLocalPayloadAfterRun));
+        Map<String, Object> profile = new LinkedHashMap<>();
+        profile.put("name", nullToEmpty(c.profileName));
+        profile.put("description", nullToEmpty(c.profileDescription));
+
+        Map<String, Object> box = new LinkedHashMap<>();
+        box.put("clientId", nullToEmpty(c.boxClientId));
+        box.put("clientSecret", nullToEmpty(c.boxClientSecret));
+        box.put("enterpriseId", nullToEmpty(c.boxEnterpriseId));
+        box.put("userId", nullToEmpty(c.boxUserId));
+        box.put("parentFolderId", nullToEmpty(c.boxParentFolderId));
+        box.put("runFolderName", nullToEmpty(c.boxRunFolderName));
+
+        Map<String, Object> upload = new LinkedHashMap<>();
+        upload.put("fileCount", c.uploadFileCount);
+        upload.put("concurrency", c.uploadConcurrency);
+        upload.put("threadMode", c.uploadThreadMode != null ? c.uploadThreadMode.name() : "");
+        upload.put("rateLimitPerSecond", c.uploadRateLimitPerSecond);
+        upload.put("enforceRateLimit", c.uploadEnforceRateLimit);
+        upload.put("chunkedUploadThresholdBytes", c.uploadChunkedUploadThresholdBytes);
+        upload.put("chunkSizeBytes", c.uploadChunkSizeBytes);
+
+        Map<String, Object> work = new LinkedHashMap<>();
+        work.put("parentDirectory", c.workParentDirectory.toString());
+        work.put("payloadFileName", c.workPayloadFileName);
+        work.put("reusePayload", c.workReusePayload);
+
+        Map<String, Object> run = new LinkedHashMap<>();
+        run.put("outputDirectory", c.runOutputDirectory.toString());
+
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        metrics.put("sampleIntervalMs", c.metricsSampleIntervalMs);
+
+        Map<String, Object> cleanup = new LinkedHashMap<>();
+        cleanup.put("deleteBoxRunFolderAfterRun", c.cleanupDeleteBoxRunFolderAfterRun);
+        cleanup.put("deleteLocalPayloadAfterRun", c.cleanupDeleteLocalPayloadAfterRun);
+
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("profile", profile);
+        root.put("box", box);
+        root.put("upload", upload);
+        root.put("pdf", Map.of("targetSizeBytes", c.pdfTargetSizeBytes));
+        root.put("work", work);
+        root.put("run", run);
+        root.put("metrics", metrics);
+        root.put("cleanup", cleanup);
+
+        if (c.retryMaxAttempts != 3 || c.retryBackoffMs != 500L) {
+            root.put("retry", Map.of(
+                    "maxAttempts", c.retryMaxAttempts,
+                    "backoffMs", c.retryBackoffMs));
+        }
+        return root;
     }
 
     private static Map<String, Object> map(Object o) {
