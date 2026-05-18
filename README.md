@@ -19,6 +19,16 @@ Optional (suppresses SQLite native-access warning on Java 21+):
 java --enable-native-access=ALL-UNNAMED -jar target/box-upload-perf-1.0.0-SNAPSHOT.jar run --profile my-benchmark
 ```
 
+### macOS distribution (no separate Java install)
+
+Build a `.app` and `.dmg` with an embedded JRE (requires JDK 21+ on macOS):
+
+```bash
+./scripts/jpackage-macos.sh
+```
+
+See [docs/PACKAGING.md](docs/PACKAGING.md) for details, manual `jpackage` commands, and platform notes.
+
 ## Quick start
 
 ### Interactive wizard (first run)

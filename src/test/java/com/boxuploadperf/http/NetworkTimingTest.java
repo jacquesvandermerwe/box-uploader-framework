@@ -19,6 +19,17 @@ class NetworkTimingTest {
     }
 
     @Test
+    void throughputMsUsesDurationWhenTransferUnset() {
+        NetworkTiming t = new NetworkTiming();
+        t.durationMs = 200;
+        t.transferMs = 0;
+        t.requestBytes = 1_000_000;
+        assertEquals(200, t.throughputMs(), 0.001);
+        double mbps = (t.requestBytes * 8.0) / (t.throughputMs() * 1000.0);
+        assertEquals(40, mbps, 0.001);
+    }
+
+    @Test
     void totalNetworkMsFallsBackToPhaseSumWhenDurationUnset() {
         NetworkTiming t = new NetworkTiming();
         t.dnsLookupMs = 1;

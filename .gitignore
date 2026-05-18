@@ -1,4 +1,7 @@
 target/
+# jpackage outputs (reproducible via scripts/jpackage-macos.sh)
+target/dist/
+target/jpackage*/
 .idea/
 .vscode/
 *.iml

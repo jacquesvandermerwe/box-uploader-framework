@@ -22,4 +22,9 @@ public final class NetworkTiming {
         }
         return dnsLookupMs + tcpConnectMs + tlsHandshakeMs + timeToFirstByteMs + transferMs;
     }
+
+    /** Wall time for upload throughput (Mbps); prefers {@link #transferMs} when set. */
+    public double throughputMs() {
+        return transferMs > 0 ? transferMs : durationMs;
+    }
 }

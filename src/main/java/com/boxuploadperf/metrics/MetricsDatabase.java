@@ -298,8 +298,9 @@ public final class MetricsDatabase implements AutoCloseable {
     private void insertApiCallUnsafe(ApiCallRecord r) throws SQLException {
         NetworkTiming t = r.timing();
         double uploadMbps = 0;
-        if (t.transferMs > 0 && t.requestBytes > 0) {
-            uploadMbps = (t.requestBytes * 8.0) / (t.transferMs * 1000.0);
+        double throughputMs = t.throughputMs();
+        if (throughputMs > 0 && t.requestBytes > 0) {
+            uploadMbps = (t.requestBytes * 8.0) / (throughputMs * 1000.0);
         }
         insertApiCall.setString(1, r.runId());
         insertApiCall.setString(2, r.uploadGuid());
