@@ -115,42 +115,42 @@ public final class BenchmarkRunner {
                             }
                             String uploadGuid = UUID.randomUUID().toString();
                             try {
-                                boolean had429;
-                                synchronized (db) {
-                                    db.connection().setAutoCommit(false);
-                                    var result = box.uploadFile(db, config.runId, threadMode, uploadIndex,
-                                            uploadGuid, payload, runFolderId, chunked);
-                                    had429 = result.had429();
-                                    db.insertFileUpload(config.runId, uploadGuid, uploadIndex, result.boxFileId(),
-                                            chunked ? "CHUNKED" : "SINGLE_STREAM",
-                                            chunked ? result.parts() : 0, true,
-                                            result.uploadDurationMs(), result.endToEndMs(),
-                                            result.ancillaryCalls(), had429);
-                                    db.commit();
-                                }
+                                // HTTP uploads run in parallel; MetricsDatabase serializes writes via writeLock.
+                                var result = box.uploadFile(db, config.runId, threadMode, uploadIndex,
+                                        uploadGuid, payload, runFolderId, chunked);
+                                boolean had429 = result.had429();
+                                db.insertFileUpload(config.runId, uploadGuid, uploadIndex, result.boxFileId(),
+                                        chunked ? "CHUNKED" : "SINGLE_STREAM",
+                                        chunked ? result.parts() : 0, true,
+                                        result.uploadDurationMs(), result.endToEndMs(),
+                                        result.ancillaryCalls(), had429);
+                                db.commit();
                                 if (had429) {
                                     count429.incrementAndGet();
                                 }
                                 succeeded.incrementAndGet();
                                 totalBytes.addAndGet(payloadBytes);
                                 sampler.addAppBytes(payloadBytes);
-                                progress.uploadSucceeded(succeeded, failed, count429);
+                                int inFlight = config.uploadConcurrency - concurrency.availablePermits();
+                                progress.uploadSucceeded(succeeded, failed, count429, inFlight);
                             } catch (Exception e) {
                                 try {
                                     db.rollback();
                                 } catch (Exception ignored) {
                                 }
                                 failed.incrementAndGet();
-                                progress.uploadFailed(uploadIndex, succeeded, failed, count429, e);
+                                int inFlight = config.uploadConcurrency - concurrency.availablePermits();
+                                progress.uploadFailed(uploadIndex, succeeded, failed, count429, inFlight, e);
                             } finally {
                                 concurrency.release();
+                                sampler.setInFlight(config.uploadConcurrency - concurrency.availablePermits());
                             }
                         });
                     }
                     executor.shutdown();
                     executor.awaitTermination(7, TimeUnit.DAYS);
                 } finally {
-                    progress.uploadPhaseComplete(succeeded, failed, count429);
+                    progress.uploadPhaseComplete(succeeded, failed, count429, 0);
                     sampler.stop();
                     samplerThread.join(2000);
                 }

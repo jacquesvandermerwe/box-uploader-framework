@@ -26,21 +26,24 @@ public final class RunProgress {
         phase(String.format(Locale.US, "Upload phase started (%d files, reporting every ~2s)", totalUploads));
     }
 
-    public void uploadSucceeded(AtomicInteger succeeded, AtomicInteger failed, AtomicInteger count429) {
-        reportIfDue(succeeded, failed, count429, false);
+    public void uploadSucceeded(AtomicInteger succeeded, AtomicInteger failed, AtomicInteger count429,
+                                int inFlight) {
+        reportIfDue(succeeded, failed, count429, inFlight, false);
     }
 
     public void uploadFailed(int uploadIndex, AtomicInteger succeeded, AtomicInteger failed,
-                             AtomicInteger count429, Exception error) {
+                             AtomicInteger count429, int inFlight, Exception error) {
         System.err.printf("[box-upload-perf] Upload %d failed: %s%n", uploadIndex, error.getMessage());
-        reportIfDue(succeeded, failed, count429, false);
+        reportIfDue(succeeded, failed, count429, inFlight, false);
     }
 
-    public void uploadPhaseComplete(AtomicInteger succeeded, AtomicInteger failed, AtomicInteger count429) {
-        reportIfDue(succeeded, failed, count429, true);
+    public void uploadPhaseComplete(AtomicInteger succeeded, AtomicInteger failed, AtomicInteger count429,
+                                    int inFlight) {
+        reportIfDue(succeeded, failed, count429, inFlight, true);
     }
 
-    private void reportIfDue(AtomicInteger succeeded, AtomicInteger failed, AtomicInteger count429, boolean force) {
+    private void reportIfDue(AtomicInteger succeeded, AtomicInteger failed, AtomicInteger count429,
+                             int inFlight, boolean force) {
         int ok = succeeded.get();
         int bad = failed.get();
         int done = ok + bad;
@@ -60,7 +63,7 @@ public final class RunProgress {
             eta = String.format(Locale.US, ", ETA ~%.0fs", remainingSec);
         }
         System.out.printf(Locale.US,
-                "[box-upload-perf] Progress: %d/%d succeeded, %d failed, %d×429, %.2f files/s%s%n",
-                ok, totalUploads, bad, count429.get(), rate, eta);
+                "[box-upload-perf] Progress: %d/%d succeeded, %d failed, %d×429, %d in-flight, %.2f files/s%s%n",
+                ok, totalUploads, bad, count429.get(), inFlight, rate, eta);
     }
 }
