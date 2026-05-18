@@ -1,7 +1,12 @@
 package com.boxuploadperf.metrics;
 
+import com.boxuploadperf.config.AppConfig;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Types;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -9,19 +14,18 @@ public final class RunSummarizer {
 
     private RunSummarizer() {}
 
-    public static void compute(Connection conn, String runId, int attempted, int succeeded, int failed,
-                               long totalBytes, double runDurationMs,
-                               double cpuAvg, double cpuMax, Double cpuSystemAvg,
-                               double appMbpsAvg, double appMbpsPeak,
-                               double nicTxAvg, double nicTxPeak, double nicRxAvg, double nicRxPeak) throws Exception {
+    public static RunSummary compute(Connection conn, AppConfig config, int attempted, int succeeded, int failed,
+                                     long totalBytes, double runDurationMs) throws Exception {
+        String runId = config.runId;
         List<Double> durations;
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT upload_duration_ms FROM file_uploads WHERE run_id = ? AND success = 1")) {
             ps.setString(1, runId);
-            var rs = ps.executeQuery();
-            durations = new java.util.ArrayList<>();
-            while (rs.next()) {
-                durations.add(rs.getDouble(1));
+            try (ResultSet rs = ps.executeQuery()) {
+                durations = new ArrayList<>();
+                while (rs.next()) {
+                    durations.add(rs.getDouble(1));
+                }
             }
         }
         Collections.sort(durations);
@@ -33,21 +37,65 @@ public final class RunSummarizer {
 
         int count429;
         int ancillary;
-        try (PreparedStatement c = conn.prepareStatement("SELECT COUNT(*) FROM api_calls WHERE run_id = ? AND rate_limited = 1")) {
+        try (PreparedStatement c = conn.prepareStatement(
+                "SELECT COUNT(*) FROM api_calls WHERE run_id = ? AND rate_limited = 1")) {
             c.setString(1, runId);
-            var rs = c.executeQuery();
-            rs.next();
-            count429 = rs.getInt(1);
+            try (ResultSet rs = c.executeQuery()) {
+                rs.next();
+                count429 = rs.getInt(1);
+            }
         }
-        try (PreparedStatement c = conn.prepareStatement("SELECT COUNT(*) FROM api_calls WHERE run_id = ? AND is_ancillary = 1")) {
+        try (PreparedStatement c = conn.prepareStatement(
+                "SELECT COUNT(*) FROM api_calls WHERE run_id = ? AND is_ancillary = 1")) {
             c.setString(1, runId);
-            var rs = c.executeQuery();
-            rs.next();
-            ancillary = rs.getInt(1);
+            try (ResultSet rs = c.executeQuery()) {
+                rs.next();
+                ancillary = rs.getInt(1);
+            }
         }
 
         double throughputBytes = runDurationMs > 0 ? totalBytes / (runDurationMs / 1000.0) : 0;
         double throughputFiles = runDurationMs > 0 ? succeeded / (runDurationMs / 1000.0) : 0;
+
+        double cpuAvg = 0;
+        double cpuMax = 0;
+        Double cpuSystemAvg = null;
+        double appMbpsAvg = 0;
+        double appMbpsPeak = 0;
+        double nicTxAvg = 0;
+        double nicTxPeak = 0;
+        double nicRxAvg = 0;
+        double nicRxPeak = 0;
+        try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT
+                  AVG(cpu_process_pct), MAX(cpu_process_pct), AVG(cpu_system_pct),
+                  AVG(app_upload_mbps), MAX(app_upload_mbps),
+                  AVG(nic_tx_mbps), MAX(nic_tx_mbps), AVG(nic_rx_mbps), MAX(nic_rx_mbps)
+                FROM resource_samples WHERE run_id = ?
+                """)) {
+            ps.setString(1, runId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    cpuAvg = rs.getDouble(1);
+                    cpuMax = rs.getDouble(2);
+                    double sys = rs.getDouble(3);
+                    if (!rs.wasNull()) {
+                        cpuSystemAvg = sys;
+                    }
+                    appMbpsAvg = rs.getDouble(4);
+                    appMbpsPeak = rs.getDouble(5);
+                    nicTxAvg = rs.getDouble(6);
+                    nicTxPeak = rs.getDouble(7);
+                    nicRxAvg = rs.getDouble(8);
+                    nicRxPeak = rs.getDouble(9);
+                }
+            }
+        }
+
+        boolean rateLimitDisabled = config.uploadRateLimitDisabled();
+        double effectiveRateLimit = config.effectiveUploadRateLimitPerSecond();
+        boolean rateLimitExplicit = config.uploadRateLimitExplicit();
+        int rateLimitMode = rateLimitDisabled ? -1 : (rateLimitExplicit ? 1 : 0);
 
         try (PreparedStatement ps = conn.prepareStatement("""
                 INSERT OR REPLACE INTO run_summaries (
@@ -58,8 +106,9 @@ public final class RunSummarizer {
                   throughput_bytes_per_sec, throughput_files_per_sec, total_bytes_uploaded, run_duration_ms,
                   cpu_process_avg_pct, cpu_process_max_pct, cpu_system_avg_pct,
                   app_upload_mbps_avg, app_upload_mbps_peak,
-                  nic_tx_mbps_avg, nic_tx_mbps_peak, nic_rx_mbps_avg, nic_rx_mbps_peak
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                  nic_tx_mbps_avg, nic_tx_mbps_peak, nic_rx_mbps_avg, nic_rx_mbps_peak,
+                  configured_rate_limit_per_sec, configured_concurrency, rate_limit_explicit
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """)) {
             int i = 1;
             ps.setString(i++, runId);
@@ -82,7 +131,7 @@ public final class RunSummarizer {
             if (cpuSystemAvg != null) {
                 ps.setDouble(i++, cpuSystemAvg);
             } else {
-                ps.setNull(i++, java.sql.Types.REAL);
+                ps.setNull(i++, Types.REAL);
             }
             ps.setDouble(i++, appMbpsAvg);
             ps.setDouble(i++, appMbpsPeak);
@@ -90,13 +139,62 @@ public final class RunSummarizer {
             ps.setDouble(i++, nicTxPeak);
             ps.setDouble(i++, nicRxAvg);
             ps.setDouble(i++, nicRxPeak);
+            if (rateLimitDisabled) {
+                ps.setNull(i++, Types.REAL);
+            } else {
+                ps.setDouble(i++, effectiveRateLimit);
+            }
+            ps.setInt(i++, config.uploadConcurrency);
+            ps.setInt(i++, rateLimitMode);
             ps.executeUpdate();
             conn.commit();
+        }
+
+        return new RunSummary(succeeded, failed, throughputFiles, effectiveRateLimit, rateLimitExplicit,
+                rateLimitDisabled, config.uploadConcurrency, cpuAvg, cpuMax, cpuSystemAvg, appMbpsAvg, appMbpsPeak);
+    }
+
+    public static RunSummary load(Connection conn, String runId) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT files_succeeded, files_failed, throughput_files_per_sec,
+                       configured_rate_limit_per_sec, configured_concurrency, rate_limit_explicit,
+                       cpu_process_avg_pct, cpu_process_max_pct, cpu_system_avg_pct,
+                       app_upload_mbps_avg, app_upload_mbps_peak
+                FROM run_summaries WHERE run_id = ?
+                """)) {
+            ps.setString(1, runId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+                Double storedLimit = rs.getDouble(4);
+                if (rs.wasNull()) {
+                    storedLimit = null;
+                }
+                Integer rateLimitMode = rs.getInt(6);
+                if (rs.wasNull()) {
+                    rateLimitMode = null;
+                }
+                boolean disabled = RunSummary.resolveDisabled(rateLimitMode);
+                double effectiveLimit = RunSummary.resolveEffectiveLimit(storedLimit, rateLimitMode);
+                boolean explicit = RunSummary.resolveExplicit(rateLimitMode);
+                Double cpuSystem = rs.getDouble(9);
+                if (rs.wasNull()) {
+                    cpuSystem = null;
+                }
+                return new RunSummary(
+                        rs.getInt(1), rs.getInt(2), rs.getDouble(3),
+                        effectiveLimit, explicit, disabled, rs.getInt(5),
+                        rs.getDouble(7), rs.getDouble(8), cpuSystem,
+                        rs.getDouble(10), rs.getDouble(11));
+            }
         }
     }
 
     private static double percentile(List<Double> sorted, int pct) {
-        if (sorted.isEmpty()) return 0;
+        if (sorted.isEmpty()) {
+            return 0;
+        }
         int idx = (int) Math.ceil(pct / 100.0 * sorted.size()) - 1;
         return sorted.get(Math.max(0, Math.min(idx, sorted.size() - 1)));
     }

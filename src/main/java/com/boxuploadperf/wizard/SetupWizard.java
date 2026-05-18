@@ -43,11 +43,17 @@ public final class SetupWizard {
             }
         }
 
+        System.out.println("--- Box credentials & target ---");
         config.boxClientId = ask("Box Client ID: ", config.boxClientId);
         config.boxClientSecret = askSecret("Box Client Secret: ", config.boxClientSecret);
-        config.boxEnterpriseId = ask("Box Enterprise ID: ", config.boxEnterpriseId);
-        config.boxUserId = ask("Box User ID (optional): ", config.boxUserId);
-        config.boxParentFolderId = ask("Box Parent Folder ID: ", config.boxParentFolderId);
+        config.boxEnterpriseId = ask("Box Enterprise ID (required unless impersonating a user): ", config.boxEnterpriseId);
+        config.boxParentFolderId = ask("Box Parent Folder ID (upload destination): ", config.boxParentFolderId);
+        config.boxUserId = ask("Impersonation User ID (optional; CCG acts as this user when set): ", config.boxUserId);
+        String rate = ask("Upload rate limit (uploads/s, 0 = Box default 240/min): ",
+                config.uploadRateLimitPerSecond > 0
+                        ? String.valueOf(config.uploadRateLimitPerSecond)
+                        : "0");
+        config.uploadRateLimitPerSecond = Double.parseDouble(rate);
 
         config.uploadFileCount = Integer.parseInt(ask("Number of uploads: ", String.valueOf(config.uploadFileCount)));
         config.pdfTargetSizeBytes = Long.parseLong(ask("PDF size (bytes): ", String.valueOf(config.pdfTargetSizeBytes)));

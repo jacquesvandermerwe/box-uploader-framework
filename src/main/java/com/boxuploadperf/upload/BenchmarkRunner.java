@@ -4,6 +4,7 @@ import com.boxuploadperf.box.BoxClient;
 import com.boxuploadperf.config.AppConfig;
 import com.boxuploadperf.metrics.MetricsDatabase;
 import com.boxuploadperf.metrics.ResourceSampler;
+import com.boxuploadperf.metrics.RunSummary;
 import com.boxuploadperf.metrics.RunSummarizer;
 import com.boxuploadperf.metrics.UploadRoutingReport;
 import com.boxuploadperf.pdf.PdfPayloadGenerator;
@@ -42,6 +43,7 @@ public final class BenchmarkRunner {
             samplerThread.start();
 
             String threadMode = config.uploadThreadMode.name();
+            RunSummary summary = null;
             try (BoxClient box = new BoxClient(config)) {
                 box.authenticate(db, config.runId, threadMode);
                 String runFolderId = box.createRunFolder(db, config.runId, threadMode);
@@ -110,9 +112,8 @@ public final class BenchmarkRunner {
                 long runDuration = System.currentTimeMillis() - runStart;
                 db.endRun(config.runId);
 
-                RunSummarizer.compute(db.connection(), config.runId, config.uploadFileCount,
-                        succeeded.get(), failed.get(), totalBytes.get(), runDuration,
-                        0, 0, null, 0, 0, 0, 0, 0, 0);
+                summary = RunSummarizer.compute(db.connection(), config, config.uploadFileCount,
+                        succeeded.get(), failed.get(), totalBytes.get(), runDuration);
 
                 if (config.cleanupDeleteBoxRunFolderAfterRun) {
                     box.deleteFolder(runFolderId);
@@ -125,17 +126,25 @@ public final class BenchmarkRunner {
 
             Path routingJson = UploadRoutingReport.write(config);
             new HtmlChartReport().generate(config);
-            printSummary(config, routingJson);
+            printSummary(config, routingJson, summary);
         }
     }
 
-    private static void printSummary(AppConfig config, Path routingJson) throws Exception {
+    private static void printSummary(AppConfig config, Path routingJson, RunSummary summary) throws Exception {
         System.out.println();
         System.out.println("Run complete: " + config.runId);
         System.out.println("Results: " + config.runDirectory());
         System.out.println("Charts:  " + config.runDirectory().resolve("charts/index.html"));
         System.out.println("Routing: " + routingJson);
         System.out.println("SQLite:  " + config.sqlitePath());
+        if (summary != null) {
+            System.out.println();
+            System.out.println("Throughput:");
+            System.out.println("  " + summary.rateLimitDescription());
+            System.out.printf("  CPU avg/max: %.1f%% / %.1f%%%n", summary.cpuProcessAvgPct(), summary.cpuProcessMaxPct());
+            System.out.printf("  App upload avg/peak: %.2f / %.2f Mbps%n",
+                    summary.appUploadMbpsAvg(), summary.appUploadMbpsPeak());
+        }
         try (var conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + config.sqlitePath().toAbsolutePath())) {
             UploadRoutingReport.printToConsole(UploadRoutingReport.load(conn, config.runId));
         }

@@ -1,0 +1,20 @@
+# Illustrative end-of-run console output (values are examples)
+
+Run complete: 07547cbb-8f2a-4b1c-9d3e-1a2b3c4d5e6f
+Results: ./results/07547cbb-8f2a-4b1c-9d3e-1a2b3c4d5e6f
+Charts:  ./results/07547cbb-8f2a-4b1c-9d3e-1a2b3c4d5e6f/charts/index.html
+Routing: ./results/07547cbb-8f2a-4b1c-9d3e-1a2b3c4d5e6f/routing.json
+SQLite:  ./results/07547cbb-8f2a-4b1c-9d3e-1a2b3c4d5e6f/metrics.db
+
+Throughput:
+  Effective 0.714 uploads/s (no rate limit baseline; concurrency=30)
+  CPU avg/max: 45.2% / 89.1%
+  App upload avg/peak: 12.34 / 28.50 Mbps
+
+Upload routing:
+  Zone host (preflight):  fupload-euc1.app.box.com
+  Cached upload base:     https://fupload-euc1.app.box.com/api/v2
+  Preflight upload_url:   https://fupload-euc1.app.box.com/api/v2/files/content
+  Hosts on wire:          [fupload-euc1.app.box.com, api.box.com]
+  PREFLIGHT_CHECK: https://api.box.com/2.0/files/content
+  UPLOAD_SIMPLE: https://fupload-euc1.app.box.com/api/v2/files/content

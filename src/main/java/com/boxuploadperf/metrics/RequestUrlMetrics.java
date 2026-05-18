@@ -25,8 +25,4 @@ public final class RequestUrlMetrics {
         }
         return scheme + "://" + authority + path;
     }
-
-    public static String hostOf(URI uri) {
-        return uri != null && uri.getHost() != null ? uri.getHost() : "";
-    }
 }

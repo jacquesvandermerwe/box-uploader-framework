@@ -1,0 +1,26 @@
+# Low concurrency — gentle load for debugging or rate-limit observation.
+# Copy to ~/.box-upload-perf/profiles/ and set real Box credentials.
+profile:
+  name: low-concurrency
+  description: 10 files, concurrency 2, virtual threads, Box default rate baseline (4/s)
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+  userId: ""
+upload:
+  fileCount: 10
+  concurrency: 2
+  threadMode: VIRTUAL
+  rateLimitPerSecond: 0
+pdf:
+  targetSizeBytes: 1048576
+work:
+  parentDirectory: "./work"
+run:
+  outputDirectory: "./results"
+cleanup:
+  deleteBoxRunFolderAfterRun: false
+metrics:
+  sampleIntervalMs: 500

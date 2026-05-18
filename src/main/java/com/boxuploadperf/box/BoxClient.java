@@ -3,7 +3,6 @@ package com.boxuploadperf.box;
 import com.boxuploadperf.config.AppConfig;
 import com.boxuploadperf.http.InstrumentedHttpClient;
 import com.boxuploadperf.http.NetworkTiming;
-import com.boxuploadperf.http.TimedBodyPublisher;
 import com.boxuploadperf.metrics.ApiCallRecord;
 import com.boxuploadperf.metrics.ApiPhase;
 import com.boxuploadperf.metrics.MetricsDatabase;
@@ -22,7 +21,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -97,10 +95,9 @@ public final class BoxClient implements AutoCloseable {
         }
         String responseBody = new String(result.response().body());
         String uploadUrl = extractJsonField(responseBody, "upload_url");
-        String uploadToken = extractJsonFieldOptional(responseBody, "upload_token");
-        uploadZone = UploadZoneResolver.fromPreflightResponse(uploadUrl, uploadToken);
+        uploadZone = UploadZoneResolver.fromPreflightResponse(uploadUrl);
         record(db, runId, null, null, ApiPhase.PREFLIGHT_CHECK, true, false, "OPTIONS",
-                RequestUrlMetrics.fromUri(URI.create(uploadUrl)),
+                RequestUrlMetrics.fromUri(URI.create(UploadZoneResolver.unescapeJsonString(uploadUrl))),
                 status, result.timing(), threadMode, 1, null);
         return uploadZone;
     }
@@ -186,7 +183,6 @@ public final class BoxClient implements AutoCloseable {
             partSha1s.add(sha1);
 
             NetworkTiming partTiming = new NetworkTiming();
-            TimedBodyPublisher publisher = new TimedBodyPublisher(part, partTiming);
             HttpRequest partReq = HttpRequest.newBuilder(URI.create(uploadPartUrl))
                     .header("Authorization", uploadAuthHeader())
                     .header("Digest", "sha=" + sha1)
@@ -322,16 +318,6 @@ public final class BoxClient implements AutoCloseable {
             return m.group(1).replace("\"", "").trim();
         }
         throw new IllegalStateException("Missing field: " + field);
-    }
-
-    private static String extractJsonFieldOptional(String json, String field) {
-        Pattern p = Pattern.compile("\"" + field + "\"\\s*:\\s*\"([^\"]*)\"");
-        Matcher m = p.matcher(json);
-        if (m.find()) {
-            String v = m.group(1);
-            return v.isEmpty() ? null : v;
-        }
-        return null;
     }
 
     private static String extractNested(String json, String object, String field) {

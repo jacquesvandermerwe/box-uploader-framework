@@ -1,0 +1,23 @@
+# Chunked upload path — payload at or above chunkedUploadThresholdBytes (50 MiB default).
+# Fewer files recommended; generation and upload take longer.
+profile:
+  name: chunked-large-payload
+  description: 5 x ~52 MiB chunked uploads (session + parts + commit)
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+upload:
+  fileCount: 5
+  concurrency: 4
+  threadMode: VIRTUAL
+  rateLimitPerSecond: 0
+  chunkedUploadThresholdBytes: 52428800
+  chunkSizeBytes: 52428800
+pdf:
+  targetSizeBytes: 52428800
+work:
+  parentDirectory: "./work"
+run:
+  outputDirectory: "./results"

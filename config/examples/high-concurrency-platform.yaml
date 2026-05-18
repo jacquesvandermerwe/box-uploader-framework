@@ -1,0 +1,24 @@
+# High concurrency using a fixed platform thread pool (compare vs VIRTUAL).
+profile:
+  name: high-concurrency-platform
+  description: 50 files, concurrency 16, PLATFORM threads, Box default rate baseline
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+  userId: ""
+upload:
+  fileCount: 50
+  concurrency: 16
+  threadMode: PLATFORM
+  platformThreadPoolSize: 16
+  rateLimitPerSecond: 0
+pdf:
+  targetSizeBytes: 1048576
+work:
+  parentDirectory: "./work"
+run:
+  outputDirectory: "./results"
+metrics:
+  sampleIntervalMs: 500

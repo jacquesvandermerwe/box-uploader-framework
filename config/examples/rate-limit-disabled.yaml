@@ -1,0 +1,18 @@
+# No rate-limit baseline in summaries — useful when maxing concurrency.
+profile:
+  name: rate-limit-disabled
+  description: No rate limit comparison; show effective throughput only
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+upload:
+  fileCount: 50
+  concurrency: 30
+  threadMode: VIRTUAL
+  rateLimitPerSecond: -1
+pdf:
+  targetSizeBytes: 1048576
+run:
+  outputDirectory: "./results"

@@ -14,11 +14,11 @@ public final class UploadZoneResolver {
     private UploadZoneResolver() {
     }
 
-    public static UploadZoneContext fromPreflightResponse(String uploadUrl, String uploadToken) {
+    public static UploadZoneContext fromPreflightResponse(String uploadUrl) {
         if (uploadUrl == null || uploadUrl.isBlank()) {
             throw new IllegalArgumentException("Preflight response missing upload_url");
         }
-        URI uri = URI.create(uploadUrl.trim());
+        URI uri = URI.create(unescapeJsonString(uploadUrl));
         String host = uri.getHost();
         if (host == null || host.isBlank()) {
             throw new IllegalArgumentException("Invalid upload_url host: " + uploadUrl);
@@ -31,10 +31,11 @@ public final class UploadZoneResolver {
         }
         String base = uri.getScheme() + "://" + host + basePath;
         String redactedPreflight = RequestUrlMetrics.fromUri(uri);
-        return new UploadZoneContext(base, host, blankToNull(uploadToken), redactedPreflight);
+        return new UploadZoneContext(base, host, redactedPreflight);
     }
 
-    private static String blankToNull(String s) {
-        return s == null || s.isBlank() ? null : s;
+    /** Box JSON may return {@code https:\/\/host\/...} from naive field extraction. */
+    static String unescapeJsonString(String s) {
+        return s.trim().replace("\\/", "/");
     }
 }

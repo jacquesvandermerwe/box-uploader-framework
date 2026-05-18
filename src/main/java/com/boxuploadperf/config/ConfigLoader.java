@@ -51,8 +51,6 @@ public final class ConfigLoader {
                 c.uploadPlatformThreadPoolSize = intVal(upload.get("platformThreadPoolSize"), c.uploadConcurrency);
             }
             c.uploadRateLimitPerSecond = doubleVal(upload.get("rateLimitPerSecond"), c.uploadRateLimitPerSecond);
-            c.uploadBucketSize = intVal(upload.get("bucketSize"), c.uploadBucketSize);
-            c.uploadBucketDelayMs = longVal(upload.get("bucketDelayMs"), c.uploadBucketDelayMs);
             c.uploadChunkedUploadThresholdBytes = longVal(upload.get("chunkedUploadThresholdBytes"), c.uploadChunkedUploadThresholdBytes);
             c.uploadChunkSizeBytes = longVal(upload.get("chunkSizeBytes"), c.uploadChunkSizeBytes);
         }
@@ -84,11 +82,6 @@ public final class ConfigLoader {
             c.metricsSqliteFileName = strOr(metrics.get("sqliteFileName"), c.metricsSqliteFileName);
             c.metricsSampleIntervalMs = longVal(metrics.get("sampleIntervalMs"), c.metricsSampleIntervalMs);
             c.metricsNetworkInterfaceName = str(metrics.get("networkInterfaceName"));
-        }
-        Map<String, Object> retry = map(root.get("retry"));
-        if (retry != null) {
-            c.retryMaxAttempts = intVal(retry.get("maxAttempts"), c.retryMaxAttempts);
-            c.retryBackoffMs = longVal(retry.get("backoffMs"), c.retryBackoffMs);
         }
         Map<String, Object> profiles = map(root.get("profiles"));
         if (profiles != null && profiles.get("directory") != null) {

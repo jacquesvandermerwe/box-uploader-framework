@@ -1,15 +1,23 @@
+# See docs/USER_GUIDE.md for all fields, example profiles (config/examples/), and report meanings.
 profile:
   name: example-virtual
   description: Example profile — copy to ~/.box-upload-perf/profiles/ and edit credentials
 box:
   clientId: "your-client-id"
   clientSecret: "your-client-secret"
-  enterpriseId: "your-enterprise-id"
-  parentFolderId: "123456789"
-  userId: ""
+  # Always set — identifies your Box enterprise (stored in profile; required for validation).
+  enterpriseId: "39176179"
+  # Folder where each run creates a subfolder and uploads files.
+  parentFolderId: "382456701600"
+  # When set, CCG uses user impersonation (box_subject_type=user). Leave "" for enterprise-as-app.
+  userId: "3312464263"
 upload:
   fileCount: 10
   concurrency: 4
+  # Reporting baseline only (not enforced). 0 = Box default 240/min (4/s).
+  # >0 = custom cap for comparison. -1 = no baseline in summaries.
+  # https://developer.box.com/guides/api-calls/permissions-and-errors/rate-limits
+  rateLimitPerSecond: 0
   threadMode: VIRTUAL
   chunkedUploadThresholdBytes: 52428800
   chunkSizeBytes: 52428800
@@ -25,6 +33,3 @@ cleanup:
   deleteLocalPayloadAfterRun: false
 metrics:
   sampleIntervalMs: 500
-retry:
-  maxAttempts: 3
-  backoffMs: 500

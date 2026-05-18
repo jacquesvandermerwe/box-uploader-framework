@@ -1,0 +1,19 @@
+# Explicit Box API upload rate baseline for report comparison (240/min = 4/s).
+# The harness does not throttle to this rate; it only compares achieved throughput.
+profile:
+  name: rate-limit-box-default
+  description: Compare throughput to Box default 240 uploads/min (4/s)
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+upload:
+  fileCount: 20
+  concurrency: 8
+  threadMode: VIRTUAL
+  rateLimitPerSecond: 0
+pdf:
+  targetSizeBytes: 1048576
+run:
+  outputDirectory: "./results"

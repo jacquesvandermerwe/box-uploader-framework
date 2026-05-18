@@ -1,0 +1,25 @@
+# High concurrency with Java virtual threads (typical throughput test).
+profile:
+  name: high-concurrency-virtual
+  description: 50 files, concurrency 30, VIRTUAL threads, no rate baseline (-1)
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+  userId: ""
+upload:
+  fileCount: 50
+  concurrency: 30
+  threadMode: VIRTUAL
+  rateLimitPerSecond: -1
+pdf:
+  targetSizeBytes: 1048576
+work:
+  parentDirectory: "./work"
+run:
+  outputDirectory: "./results"
+cleanup:
+  deleteBoxRunFolderAfterRun: true
+metrics:
+  sampleIntervalMs: 500

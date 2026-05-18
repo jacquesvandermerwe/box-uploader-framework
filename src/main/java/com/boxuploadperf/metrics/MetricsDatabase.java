@@ -14,7 +14,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 
 public final class MetricsDatabase implements AutoCloseable {
@@ -151,6 +150,9 @@ public final class MetricsDatabase implements AutoCloseable {
             ensureRunsColumn(st, "upload_zone_host", "TEXT");
             ensureRunsColumn(st, "upload_base_url", "TEXT");
             ensureRunsColumn(st, "preflight_upload_url", "TEXT");
+            ensureSummaryColumn(st, "configured_rate_limit_per_sec", "REAL");
+            ensureSummaryColumn(st, "configured_concurrency", "INTEGER");
+            ensureSummaryColumn(st, "rate_limit_explicit", "INTEGER");
             st.execute("""
                     CREATE TABLE IF NOT EXISTS resource_samples (
                       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,8 +170,36 @@ public final class MetricsDatabase implements AutoCloseable {
                       in_flight_uploads INTEGER
                     )
                     """);
+            ensureIndexes(st);
         }
         connection.commit();
+    }
+
+    /**
+     * Indexes for per-run aggregation (summaries, charts, routing report).
+     * {@code runs.run_id} and {@code run_summaries.run_id} are PRIMARY KEYs.
+     */
+    private static void ensureIndexes(Statement st) throws SQLException {
+        st.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_uploads_run_success_index
+                ON file_uploads (run_id, success, upload_index)
+                """);
+        st.execute("""
+                CREATE INDEX IF NOT EXISTS idx_api_calls_run_rate_limited
+                ON api_calls (run_id, rate_limited)
+                """);
+        st.execute("""
+                CREATE INDEX IF NOT EXISTS idx_api_calls_run_ancillary
+                ON api_calls (run_id, is_ancillary)
+                """);
+        st.execute("""
+                CREATE INDEX IF NOT EXISTS idx_api_calls_run_phase_id
+                ON api_calls (run_id, phase, id)
+                """);
+        st.execute("""
+                CREATE INDEX IF NOT EXISTS idx_resource_samples_run_elapsed
+                ON resource_samples (run_id, elapsed_ms)
+                """);
     }
 
     public void insertRunStart(AppConfig config, String configSource, String payloadSha256, long payloadBytes) throws SQLException {
@@ -222,9 +252,17 @@ public final class MetricsDatabase implements AutoCloseable {
     }
 
     private static void ensureRunsColumn(Statement st, String column, String sqlType) throws SQLException {
-        try (ResultSet cols = st.getConnection().getMetaData().getColumns(null, null, "runs", column)) {
+        ensureTableColumn(st, "runs", column, sqlType);
+    }
+
+    private static void ensureSummaryColumn(Statement st, String column, String sqlType) throws SQLException {
+        ensureTableColumn(st, "run_summaries", column, sqlType);
+    }
+
+    private static void ensureTableColumn(Statement st, String table, String column, String sqlType) throws SQLException {
+        try (ResultSet cols = st.getConnection().getMetaData().getColumns(null, null, table, column)) {
             if (!cols.next()) {
-                st.execute("ALTER TABLE runs ADD COLUMN " + column + " " + sqlType);
+                st.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + sqlType);
             }
         }
     }
@@ -377,42 +415,6 @@ public final class MetricsDatabase implements AutoCloseable {
             ps.setInt(12, inFlight);
             ps.executeUpdate();
             connection.commit();
-        }
-    }
-
-    public List<Double> successfulUploadDurations(String runId) throws SQLException {
-        List<Double> list = new ArrayList<>();
-        try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT upload_duration_ms FROM file_uploads WHERE run_id = ? AND success = 1")) {
-            ps.setString(1, runId);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    list.add(rs.getDouble(1));
-                }
-            }
-        }
-        return list;
-    }
-
-    public int count429(String runId) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT COUNT(*) FROM api_calls WHERE run_id = ? AND rate_limited = 1")) {
-            ps.setString(1, runId);
-            try (ResultSet rs = ps.executeQuery()) {
-                rs.next();
-                return rs.getInt(1);
-            }
-        }
-    }
-
-    public int countAncillary(String runId) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT COUNT(*) FROM api_calls WHERE run_id = ? AND is_ancillary = 1")) {
-            ps.setString(1, runId);
-            try (ResultSet rs = ps.executeQuery()) {
-                rs.next();
-                return rs.getInt(1);
-            }
         }
     }
 

@@ -1,0 +1,18 @@
+# Custom rate baseline for reports — e.g. internal cap of 2 uploads/s.
+profile:
+  name: rate-limit-custom
+  description: Report compares to configured 2 uploads/s (not enforced)
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+upload:
+  fileCount: 20
+  concurrency: 8
+  threadMode: VIRTUAL
+  rateLimitPerSecond: 2.0
+pdf:
+  targetSizeBytes: 1048576
+run:
+  outputDirectory: "./results"

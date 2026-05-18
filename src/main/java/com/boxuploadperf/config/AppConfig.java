@@ -5,6 +5,14 @@ import java.util.UUID;
 
 public final class AppConfig {
 
+    /**
+     * Box upload API limit per user: 240 uploads/minute.
+     * @see <a href="https://developer.box.com/guides/api-calls/permissions-and-errors/rate-limits">Box rate limits</a>
+     */
+    public static final double BOX_UPLOAD_RATE_LIMIT_PER_MINUTE = 240.0;
+    public static final double BOX_DEFAULT_UPLOAD_RATE_LIMIT_PER_SECOND =
+            BOX_UPLOAD_RATE_LIMIT_PER_MINUTE / 60.0;
+
     public String profileName;
     public String profileDescription;
 
@@ -19,9 +27,11 @@ public final class AppConfig {
     public int uploadConcurrency = 32;
     public ThreadMode uploadThreadMode;
     public Integer uploadPlatformThreadPoolSize;
+  /**
+   * Profile override (uploads/s). {@code 0} = Box default (240/min).
+   * Negative = no rate-limit baseline for this run.
+   */
     public double uploadRateLimitPerSecond;
-    public int uploadBucketSize;
-    public long uploadBucketDelayMs;
     public long uploadChunkedUploadThresholdBytes = 52_428_800L;
     public long uploadChunkSizeBytes = 52_428_800L;
 
@@ -39,15 +49,20 @@ public final class AppConfig {
     public long metricsSampleIntervalMs = 500L;
     public String metricsNetworkInterfaceName;
 
-    public int retryMaxAttempts = 3;
-    public long retryBackoffMs = 500L;
-
     public Path profilesDirectory = Path.of(System.getProperty("user.home"), ".box-upload-perf", "profiles");
 
     public void validate() {
         requireJava21();
-        if (isBlank(boxClientId) || isBlank(boxClientSecret) || isBlank(boxEnterpriseId)) {
-            throw new IllegalArgumentException("box.clientId, box.clientSecret, and box.enterpriseId are required in profile or wizard");
+        if (isBlank(boxClientId) || isBlank(boxClientSecret)) {
+            throw new IllegalArgumentException("box.clientId and box.clientSecret are required (profile or wizard)");
+        }
+        boolean impersonating = !isBlank(boxUserId);
+        if (!impersonating && isBlank(boxEnterpriseId)) {
+            throw new IllegalArgumentException(
+                    "box.enterpriseId is required when box.userId is not set (enterprise CCG)");
+        }
+        if (!isBlank(boxEnterpriseId) && boxEnterpriseId.equals("0")) {
+            throw new IllegalArgumentException("box.enterpriseId cannot be 0 (use your Box enterprise numeric ID)");
         }
         if (isBlank(boxParentFolderId)) {
             throw new IllegalArgumentException("box.parentFolderId is required");
@@ -78,6 +93,26 @@ public final class AppConfig {
 
     public boolean useChunkedUpload() {
         return pdfTargetSizeBytes >= uploadChunkedUploadThresholdBytes;
+    }
+
+    /** {@code true} when {@code upload.rateLimitPerSecond} &lt; 0 (no comparison baseline). */
+    public boolean uploadRateLimitDisabled() {
+        return uploadRateLimitPerSecond < 0;
+    }
+
+    /** {@code true} when {@code upload.rateLimitPerSecond} is a positive profile override. */
+    public boolean uploadRateLimitExplicit() {
+        return uploadRateLimitPerSecond > 0;
+    }
+
+    /** Limit used for throughput comparison: profile value or Box default (240/min). */
+    public double effectiveUploadRateLimitPerSecond() {
+        if (uploadRateLimitDisabled()) {
+            return 0;
+        }
+        return uploadRateLimitExplicit()
+                ? uploadRateLimitPerSecond
+                : BOX_DEFAULT_UPLOAD_RATE_LIMIT_PER_SECOND;
     }
 
     public Path payloadPath() {

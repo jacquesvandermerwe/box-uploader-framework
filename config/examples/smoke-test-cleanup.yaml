@@ -1,0 +1,21 @@
+# Minimal smoke test — few files, deletes Box run folder when done.
+profile:
+  name: smoke-test-cleanup
+  description: 2 files, concurrency 2, cleanup Box folder after run
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+upload:
+  fileCount: 2
+  concurrency: 2
+  threadMode: VIRTUAL
+  rateLimitPerSecond: 0
+pdf:
+  targetSizeBytes: 262144
+cleanup:
+  deleteBoxRunFolderAfterRun: true
+  deleteLocalPayloadAfterRun: false
+run:
+  outputDirectory: "./results"

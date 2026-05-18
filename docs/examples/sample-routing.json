@@ -1,0 +1,11 @@
+{
+  "uploadZoneHost": "fupload-euc1.app.box.com",
+  "uploadBaseUrl": "https://fupload-euc1.app.box.com/api/v2",
+  "preflightUploadUrl": "https://fupload-euc1.app.box.com/api/v2/files/content",
+  "hostsObserved": ["api.box.com", "fupload-euc1.app.box.com"],
+  "urlsByPhase": {
+    "PREFLIGHT_CHECK": ["https://api.box.com/2.0/files/content"],
+    "UPLOAD_SIMPLE": ["https://fupload-euc1.app.box.com/api/v2/files/content"]
+  },
+  "routingWarnings": []
+}
