@@ -367,10 +367,11 @@ Each run writes to **`results/<runId>/`** (or `run.outputDirectory/<runId>`).
 
 ```
 results/<runId>/
-├── metrics.db          # SQLite — full instrumentation
-├── routing.json        # Upload hosts/URLs summary
+├── metrics.db              # SQLite — full instrumentation
+├── routing.json            # Upload hosts/URLs summary
+├── benchmark-report.pdf    # PDF report (default; see report.* config)
 └── charts/
-    └── index.html      # Configuration, metrics, routing, charts
+    └── index.html          # Configuration, metrics, routing, charts
 ```
 
 ### `metrics.db` (SQLite)
@@ -404,6 +405,20 @@ Single-page report with:
    - App upload Mbps vs elapsed time
 
 Open in a browser: `results/<runId>/charts/index.html`.
+
+### `benchmark-report.pdf` (PDF report)
+
+Generated locally with **PDFBox** (no browser or Chart.js CDN). Uses the same data as the HTML report: panel-style tables, monospace values, and line charts with the same colors as Chart.js (blue / green / red). Suitable for archiving or sharing when you cannot open HTML.
+
+| Profile key | Default | Description |
+|-------------|---------|-------------|
+| `report.generatePdf` | `true` | Write `report.pdfFileName` under the run directory |
+| `report.uploadPdfToBox` | `false` | Upload that PDF into the Box run folder after the run |
+| `report.pdfFileName` | `benchmark-report.pdf` | Local filename and Box file name |
+
+Example: [config/examples/report-upload-to-box.yaml](../config/examples/report-upload-to-box.yaml).
+
+Set `cleanup.deleteBoxRunFolderAfterRun: false` if you need the report to remain on Box after upload (upload happens **before** folder delete).
 
 ### Console summary fields
 

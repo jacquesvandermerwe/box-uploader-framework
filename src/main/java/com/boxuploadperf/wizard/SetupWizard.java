@@ -64,6 +64,8 @@ public final class SetupWizard {
         config.uploadChunkSizeBytes = Long.parseLong(ask("Chunk size (bytes): ",
                 String.valueOf(config.uploadChunkSizeBytes)));
 
+        config.assignFreshRunIdentity();
+
         System.out.println("\n--- Review ---");
         System.out.println(profiles.redactedYaml(config));
 

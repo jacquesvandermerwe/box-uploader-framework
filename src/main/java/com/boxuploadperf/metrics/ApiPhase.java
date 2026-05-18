@@ -8,5 +8,6 @@ public enum ApiPhase {
     UPLOAD_SESSION_CREATE,
     UPLOAD_PART,
     UPLOAD_COMMIT,
-    FOLDER_DELETE
+    FOLDER_DELETE,
+    REPORT_UPLOAD
 }

@@ -50,7 +50,19 @@ public final class AppConfig {
     public boolean cleanupDeleteBoxRunFolderAfterRun;
     public boolean cleanupDeleteLocalPayloadAfterRun;
 
+    /** Write {@link #reportPdfFileName} under the run directory after each run. */
+    public boolean reportGeneratePdf = true;
+    /** Upload the PDF report into the Box run folder (requires {@link #reportGeneratePdf}). */
+    public boolean reportUploadPdfToBox;
+    public String reportPdfFileName = "benchmark-report.pdf";
+
     public String runId = UUID.randomUUID().toString();
+
+    /** New run identity for SQLite metrics and the Box run folder (not persisted in profiles). */
+    public void assignFreshRunIdentity() {
+        runId = UUID.randomUUID().toString();
+        boxRunFolderName = runId;
+    }
     public Path runOutputDirectory = Path.of("./results");
     public String metricsSqliteFileName = "metrics.db";
     public long metricsSampleIntervalMs = 500L;
@@ -74,9 +86,8 @@ public final class AppConfig {
         if (isBlank(boxParentFolderId)) {
             throw new IllegalArgumentException("box.parentFolderId is required");
         }
-        if (isBlank(boxRunFolderName)) {
-            boxRunFolderName = runId;
-        }
+        // Box folder name always follows runId so saved profiles cannot reuse a prior folder (409).
+        boxRunFolderName = runId;
         if (uploadThreadMode == null) {
             throw new IllegalArgumentException("upload.threadMode is required (VIRTUAL or PLATFORM)");
         }
@@ -149,6 +160,10 @@ public final class AppConfig {
 
     public Path sqlitePath() {
         return runDirectory().resolve(metricsSqliteFileName);
+    }
+
+    public Path reportPdfPath() {
+        return runDirectory().resolve(reportPdfFileName);
     }
 
     public static void requireJava21() {

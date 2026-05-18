@@ -39,7 +39,7 @@ public final class ConfigLoader {
             c.boxEnterpriseId = str(box.get("enterpriseId"));
             c.boxUserId = str(box.get("userId"));
             c.boxParentFolderId = str(box.get("parentFolderId"));
-            c.boxRunFolderName = str(box.get("runFolderName"));
+            // runFolderName in YAML is ignored; each run uses run.runId (see AppConfig.validate).
         }
         Map<String, Object> upload = map(root.get("upload"));
         if (upload != null) {
@@ -78,6 +78,16 @@ public final class ConfigLoader {
             c.cleanupDeleteBoxRunFolderAfterRun = bool(cleanup.get("deleteBoxRunFolderAfterRun"));
             c.cleanupDeleteLocalPayloadAfterRun = bool(cleanup.get("deleteLocalPayloadAfterRun"));
         }
+        Map<String, Object> report = map(root.get("report"));
+        if (report != null) {
+            if (report.get("generatePdf") != null) {
+                c.reportGeneratePdf = bool(report.get("generatePdf"));
+            }
+            if (report.get("uploadPdfToBox") != null) {
+                c.reportUploadPdfToBox = bool(report.get("uploadPdfToBox"));
+            }
+            c.reportPdfFileName = strOr(report.get("pdfFileName"), c.reportPdfFileName);
+        }
         Map<String, Object> run = map(root.get("run"));
         if (run != null) {
             c.runId = strOr(run.get("runId"), c.runId);
@@ -95,9 +105,6 @@ public final class ConfigLoader {
         if (profiles != null && profiles.get("directory") != null) {
             c.profilesDirectory = Path.of(str(profiles.get("directory")));
         }
-        if (c.boxRunFolderName == null || c.boxRunFolderName.isBlank()) {
-            c.boxRunFolderName = c.runId;
-        }
         return c;
     }
 
@@ -113,7 +120,6 @@ public final class ConfigLoader {
         box.put("enterpriseId", nullToEmpty(c.boxEnterpriseId));
         box.put("userId", nullToEmpty(c.boxUserId));
         box.put("parentFolderId", nullToEmpty(c.boxParentFolderId));
-        box.put("runFolderName", nullToEmpty(c.boxRunFolderName));
 
         Map<String, Object> upload = new LinkedHashMap<>();
         upload.put("fileCount", c.uploadFileCount);
@@ -139,6 +145,11 @@ public final class ConfigLoader {
         cleanup.put("deleteBoxRunFolderAfterRun", c.cleanupDeleteBoxRunFolderAfterRun);
         cleanup.put("deleteLocalPayloadAfterRun", c.cleanupDeleteLocalPayloadAfterRun);
 
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("generatePdf", c.reportGeneratePdf);
+        report.put("uploadPdfToBox", c.reportUploadPdfToBox);
+        report.put("pdfFileName", c.reportPdfFileName);
+
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("profile", profile);
         root.put("box", box);
@@ -148,6 +159,7 @@ public final class ConfigLoader {
         root.put("run", run);
         root.put("metrics", metrics);
         root.put("cleanup", cleanup);
+        root.put("report", report);
 
         if (c.retryMaxAttempts != 3 || c.retryBackoffMs != 500L) {
             root.put("retry", Map.of(

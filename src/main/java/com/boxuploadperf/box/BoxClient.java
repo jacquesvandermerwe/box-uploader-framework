@@ -9,6 +9,7 @@ import com.boxuploadperf.metrics.ApiCallRecord;
 import com.boxuploadperf.metrics.ApiPhase;
 import com.boxuploadperf.metrics.MetricsDatabase;
 import com.boxuploadperf.metrics.RequestUrlMetrics;
+import com.boxuploadperf.metrics.UploadFailureClassifier;
 
 import java.io.IOException;
 import java.net.URI;
@@ -98,8 +99,19 @@ public final class BoxClient implements AutoCloseable {
     }
 
     public UploadResult uploadFile(MetricsDatabase db, String runId, String threadMode, int uploadIndex,
-                                   String uploadGuid, Path payload, String parentFolderId, boolean chunked) throws Exception {
-        byte[] fileBytes = Files.readAllBytes(payload);
+                                   String uploadGuid, byte[] fileBytes, String parentFolderId, boolean chunked)
+            throws Exception {
+        UploadAttemptTracker.begin();
+        return uploadFileInner(db, runId, threadMode, uploadIndex, uploadGuid, fileBytes, parentFolderId, chunked);
+    }
+
+    public void clearUploadAttemptTracker() {
+        UploadAttemptTracker.clear();
+    }
+
+    private UploadResult uploadFileInner(MetricsDatabase db, String runId, String threadMode, int uploadIndex,
+                                         String uploadGuid, byte[] fileBytes, String parentFolderId, boolean chunked)
+            throws Exception {
         String fileName = uploadGuid + ".pdf";
         long startE2e = System.nanoTime();
         int ancillary = 0;
@@ -109,7 +121,7 @@ public final class BoxClient implements AutoCloseable {
             NetworkTiming timing = new NetworkTiming();
             String attributes = "{\"name\":\"" + escapeJson(fileName) + "\",\"parent\":{\"id\":\""
                     + parentFolderId + "\"}}";
-            byte[] body = buildMultipart(attributes, fileBytes, fileName);
+            byte[] body = buildMultipart(attributes, fileBytes, fileName, "application/pdf");
             timing.requestBytes = body.length;
             HttpRequest request = HttpRequest.newBuilder(URI.create(uploadZone.uploadBaseUrl() + "/files/content"))
                     .header("Authorization", uploadAuthHeader())
@@ -128,7 +140,7 @@ public final class BoxClient implements AutoCloseable {
             timing.connectionReused = httpTiming.connectionReused;
             timing.responseBytes = httpTiming.responseBytes;
             int status = result.response().statusCode();
-            had429 = status == 429;
+            had429 |= UploadAttemptTracker.state().saw429 || status == 429;
             if (status != 201) {
                 throw new IOException("Upload failed: " + status);
             }
@@ -138,6 +150,40 @@ public final class BoxClient implements AutoCloseable {
         }
 
         return uploadChunked(db, runId, threadMode, uploadIndex, uploadGuid, fileName, fileBytes, parentFolderId, startE2e);
+    }
+
+    /** HTTP attempts and last status for the current upload thread (after {@link #uploadFile}). */
+    public UploadAttemptStats uploadAttemptStats() {
+        UploadAttemptTracker.State s = UploadAttemptTracker.state();
+        return new UploadAttemptStats(s.lastStatusCode, s.httpAttempts, s.saw429);
+    }
+
+    public record UploadAttemptStats(int lastStatusCode, int httpAttempts, boolean saw429) {}
+
+    /**
+     * Uploads a local PDF report into the run folder (not counted as a benchmark file upload).
+     */
+    public String uploadReportFile(MetricsDatabase db, String runId, String threadMode,
+                                   Path localFile, String boxFileName, String parentFolderId) throws Exception {
+        byte[] fileBytes = Files.readAllBytes(localFile);
+        String safeName = boxFileName != null && !boxFileName.isBlank() ? boxFileName : "benchmark-report.pdf";
+        NetworkTiming timing = new NetworkTiming();
+        String attributes = "{\"name\":\"" + escapeJson(safeName) + "\",\"parent\":{\"id\":\""
+                + parentFolderId + "\"}}";
+        byte[] body = buildMultipart(attributes, fileBytes, safeName, "application/pdf");
+        timing.requestBytes = body.length;
+        HttpRequest request = HttpRequest.newBuilder(URI.create(uploadZone.uploadBaseUrl() + "/files/content"))
+                .header("Authorization", uploadAuthHeader())
+                .header("Content-Type", "multipart/form-data; boundary=boxperf")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                .build();
+        var result = sendWithRetry(db, runId, null, null, ApiPhase.REPORT_UPLOAD, true, false,
+                request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
+        int status = result.response().statusCode();
+        if (status != 201) {
+            throw new IOException("Report upload failed: " + status);
+        }
+        return extractJsonField(new String(result.response().body()), "id");
     }
 
     private UploadResult uploadChunked(MetricsDatabase db, String runId, String threadMode, int uploadIndex,
@@ -234,8 +280,24 @@ public final class BoxClient implements AutoCloseable {
             Integer chunkIndex, Long chunkOffset, Integer chunkLength) throws Exception {
         InterruptedException interrupted = null;
         for (int attempt = 1; attempt <= config.retryMaxAttempts; attempt++) {
-            var result = http.send(request, handler);
-            int status = result.response().statusCode();
+            InstrumentedHttpClient.HttpResult<T> result;
+            int status;
+            NetworkTiming timing;
+            try {
+                result = http.send(request, handler);
+                status = result.response().statusCode();
+                timing = result.timing();
+            } catch (Exception ex) {
+                if (uploadGuid != null) {
+                    UploadAttemptTracker.recordHttpAttempt(0);
+                }
+                recordTransportFailure(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary,
+                        request, threadMode, attempt, chunkIndex, chunkOffset, chunkLength, ex);
+                throw ex;
+            }
+            if (uploadGuid != null) {
+                UploadAttemptTracker.recordHttpAttempt(status);
+            }
             RetryAfterParser.OptionalInt parsedRetry = RetryAfterParser.parseSeconds(result.response());
             Integer retryAfterSec = parsedRetry.isPresent() ? parsedRetry.getAsInt() : null;
             boolean retryable = status == 429 || status >= 500;
@@ -246,7 +308,7 @@ public final class BoxClient implements AutoCloseable {
             String delaySource = delay != null && sleepMs != null ? delay.source().name() : null;
             record(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary,
                     request.method(), RequestUrlMetrics.fromUri(request.uri()),
-                    status, result.timing(), threadMode, attempt, retryAfterSec,
+                    status, timing, threadMode, attempt, retryAfterSec,
                     chunkIndex, chunkOffset, chunkLength, sleepMs, delaySource);
             if (!retryable || attempt >= config.retryMaxAttempts) {
                 return result;
@@ -265,16 +327,48 @@ public final class BoxClient implements AutoCloseable {
         throw new IOException("Request failed after " + config.retryMaxAttempts + " attempts: " + request.uri());
     }
 
+    private void recordTransportFailure(
+            MetricsDatabase db,
+            String runId,
+            String uploadGuid,
+            Integer uploadIndex,
+            ApiPhase phase,
+            boolean ancillary,
+            boolean primary,
+            HttpRequest request,
+            String threadMode,
+            int attempt,
+            Integer chunkIndex,
+            Long chunkOffset,
+            Integer chunkLength,
+            Exception ex) throws Exception {
+        NetworkTiming timing = new NetworkTiming();
+        record(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary,
+                request.method(), RequestUrlMetrics.fromUri(request.uri()),
+                0, timing, threadMode, attempt, null, chunkIndex, chunkOffset, chunkLength,
+                null, null, UploadFailureClassifier.truncateMessage(ex));
+    }
+
     private void record(MetricsDatabase db, String runId, String uploadGuid, Integer uploadIndex,
                           ApiPhase phase, boolean ancillary, boolean primary, String method, String url,
                           int status, NetworkTiming timing, String threadMode, int attempt, Integer retryAfterSec,
                           Integer chunkIndex, Long chunkOffset, Integer chunkLength,
                           Long retrySleepMs, String retryDelaySource) throws Exception {
+        record(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary, method, url, status, timing,
+                threadMode, attempt, retryAfterSec, chunkIndex, chunkOffset, chunkLength,
+                retrySleepMs, retryDelaySource, status >= 400 ? "HTTP " + status : null);
+    }
+
+    private void record(MetricsDatabase db, String runId, String uploadGuid, Integer uploadIndex,
+                          ApiPhase phase, boolean ancillary, boolean primary, String method, String url,
+                          int status, NetworkTiming timing, String threadMode, int attempt, Integer retryAfterSec,
+                          Integer chunkIndex, Long chunkOffset, Integer chunkLength,
+                          Long retrySleepMs, String retryDelaySource, String errorMessage) throws Exception {
         db.insertApiCall(new ApiCallRecord(
                 runId, uploadGuid, null, uploadIndex, phase, chunkIndex, chunkOffset, chunkLength,
                 config.useChunkedUpload() ? "CHUNKED" : "SINGLE_STREAM",
                 ancillary, primary, Instant.now(), method, url, status, timing, threadMode, attempt,
-                status == 429, retryAfterSec, status >= 400 ? "HTTP " + status : null,
+                status == 429, retryAfterSec, errorMessage,
                 retrySleepMs, retryDelaySource));
     }
 
@@ -300,13 +394,17 @@ public final class BoxClient implements AutoCloseable {
     }
 
     private static byte[] buildMultipart(String attributes, byte[] fileBytes, String fileName) {
+        return buildMultipart(attributes, fileBytes, fileName, "application/pdf");
+    }
+
+    private static byte[] buildMultipart(String attributes, byte[] fileBytes, String fileName, String contentType) {
         String boundary = "boxperf";
         String header = "--" + boundary + "\r\n"
                 + "Content-Disposition: form-data; name=\"attributes\"\r\n\r\n"
                 + attributes + "\r\n"
                 + "--" + boundary + "\r\n"
                 + "Content-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"\r\n"
-                + "Content-Type: application/pdf\r\n\r\n";
+                + "Content-Type: " + contentType + "\r\n\r\n";
         String footer = "\r\n--" + boundary + "--\r\n";
         byte[] h = header.getBytes(StandardCharsets.UTF_8);
         byte[] f = footer.getBytes(StandardCharsets.UTF_8);

@@ -15,7 +15,7 @@ public final class RunSummarizer {
     private RunSummarizer() {}
 
     public static RunSummary compute(Connection conn, AppConfig config, int attempted, int succeeded, int failed,
-                                     long totalBytes, double runDurationMs) throws Exception {
+                                     int filesNotStarted, long totalBytes, double runDurationMs) throws Exception {
         String runId = config.runId;
         List<Double> durations;
         try (PreparedStatement ps = conn.prepareStatement(
@@ -149,7 +149,7 @@ public final class RunSummarizer {
 
         try (PreparedStatement ps = conn.prepareStatement("""
                 INSERT OR REPLACE INTO run_summaries (
-                  run_id, files_attempted, files_succeeded, files_failed,
+                  run_id, files_attempted, files_succeeded, files_failed, files_not_started,
                   upload_time_min_ms, upload_time_avg_ms, upload_time_max_ms,
                   upload_time_p95_ms, upload_time_p99_ms,
                   ancillary_request_count, count_429,
@@ -160,13 +160,14 @@ public final class RunSummarizer {
                   configured_rate_limit_per_sec, configured_concurrency, rate_limit_explicit,
                   retry_sleep_total_ms, retry_sleep_avg_ms, retry_sleep_count,
                   retry_after_avg_sec, retry_after_max_sec, retry_429_missing_header_count
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """)) {
             int i = 1;
             ps.setString(i++, runId);
             ps.setInt(i++, attempted);
             ps.setInt(i++, succeeded);
             ps.setInt(i++, failed);
+            ps.setInt(i++, filesNotStarted);
             ps.setDouble(i++, min);
             ps.setDouble(i++, avg);
             ps.setDouble(i++, max);

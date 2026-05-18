@@ -6,9 +6,11 @@ import com.boxuploadperf.metrics.MetricsDatabase;
 import com.boxuploadperf.metrics.ResourceSampler;
 import com.boxuploadperf.metrics.RunSummary;
 import com.boxuploadperf.metrics.RunSummarizer;
+import com.boxuploadperf.metrics.UploadFailureReport;
 import com.boxuploadperf.metrics.UploadRoutingReport;
 import com.boxuploadperf.pdf.PdfPayloadGenerator;
 import com.boxuploadperf.charts.HtmlChartReport;
+import com.boxuploadperf.charts.PdfChartReport;
 
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -62,6 +64,7 @@ public final class BenchmarkRunner {
 
             String threadMode = config.uploadThreadMode.name();
             RunSummary summary = null;
+            UploadFailureReport.Summary failureSummary = null;
             try (BoxClient box = new BoxClient(config)) {
                 progress.phase("Authenticating (CCG)");
                 box.authenticate(db, config.runId, threadMode);
@@ -75,6 +78,9 @@ public final class BenchmarkRunner {
                 db.updateRunUploadZone(config.runId, zone.uploadZoneHost(), zone.uploadBaseUrl(),
                         zone.preflightUploadUrl());
                 progress.phase("Upload zone: " + zone.uploadZoneHost());
+
+                progress.phase("Loading payload into memory");
+                byte[] payloadBytesArray = Files.readAllBytes(payload);
 
                 UploadRateLimiter rateLimiter = null;
                 if (config.shouldEnforceRateLimit()) {
@@ -103,29 +109,21 @@ public final class BenchmarkRunner {
                     for (int i = 0; i < config.uploadFileCount; i++) {
                         final int uploadIndex = i;
                         executor.submit(() -> {
+                            String uploadGuid = UUID.randomUUID().toString();
+                            long taskStart = System.nanoTime();
+                            boolean slotHeld = false;
                             try {
                                 concurrency.acquire();
+                                slotHeld = true;
                                 sampler.setInFlight(config.uploadConcurrency - concurrency.availablePermits());
                                 if (limiter != null) {
                                     limiter.acquire();
                                 }
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                return;
-                            }
-                            String uploadGuid = UUID.randomUUID().toString();
-                            try {
-                                // HTTP uploads run in parallel; MetricsDatabase serializes writes via writeLock.
                                 var result = box.uploadFile(db, config.runId, threadMode, uploadIndex,
-                                        uploadGuid, payload, runFolderId, chunked);
-                                boolean had429 = result.had429();
-                                db.insertFileUpload(config.runId, uploadGuid, uploadIndex, result.boxFileId(),
-                                        chunked ? "CHUNKED" : "SINGLE_STREAM",
-                                        chunked ? result.parts() : 0, true,
-                                        result.uploadDurationMs(), result.endToEndMs(),
-                                        result.ancillaryCalls(), had429);
-                                db.commit();
-                                if (had429) {
+                                        uploadGuid, payloadBytesArray, runFolderId, chunked);
+                                UploadTaskSupport.recordSuccess(db, config, box, uploadGuid, uploadIndex, result,
+                                        chunked);
+                                if (result.had429() || box.uploadAttemptStats().saw429()) {
                                     count429.incrementAndGet();
                                 }
                                 succeeded.incrementAndGet();
@@ -133,16 +131,34 @@ public final class BenchmarkRunner {
                                 sampler.addAppBytes(payloadBytes);
                                 int inFlight = config.uploadConcurrency - concurrency.availablePermits();
                                 progress.uploadSucceeded(succeeded, failed, count429, inFlight);
-                            } catch (Exception e) {
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
                                 try {
-                                    db.rollback();
-                                } catch (Exception ignored) {
+                                    UploadTaskSupport.recordInterrupted(db, config, uploadGuid, uploadIndex, chunked,
+                                            "waiting for concurrency or rate limit");
+                                } catch (Exception ex) {
+                                    System.err.printf("[box-upload-perf] Upload %d metrics error: %s%n",
+                                            uploadIndex, ex.getMessage());
+                                }
+                                failed.incrementAndGet();
+                                progress.uploadFailed(uploadIndex, succeeded, failed, count429, 0, e);
+                            } catch (Exception e) {
+                                double e2eMs = (System.nanoTime() - taskStart) / 1_000_000.0;
+                                try {
+                                    UploadTaskSupport.recordFailure(db, config, box, uploadGuid, uploadIndex,
+                                            chunked, e, e2eMs);
+                                } catch (Exception ex) {
+                                    System.err.printf("[box-upload-perf] Upload %d metrics error: %s%n",
+                                            uploadIndex, ex.getMessage());
                                 }
                                 failed.incrementAndGet();
                                 int inFlight = config.uploadConcurrency - concurrency.availablePermits();
                                 progress.uploadFailed(uploadIndex, succeeded, failed, count429, inFlight, e);
                             } finally {
-                                concurrency.release();
+                                box.clearUploadAttemptTracker();
+                                if (slotHeld) {
+                                    concurrency.release();
+                                }
                                 sampler.setInFlight(config.uploadConcurrency - concurrency.availablePermits());
                             }
                         });
@@ -159,31 +175,64 @@ public final class BenchmarkRunner {
                 db.endRun(config.runId);
 
                 progress.phase("Computing run summary");
+                failureSummary = UploadFailureReport.load(
+                        db.connection(), config.runId, config.uploadFileCount);
+                int notStarted = failureSummary.filesNotStarted();
+                if (notStarted > 0) {
+                    System.err.printf("[box-upload-perf] WARNING: %d of %d uploads have no recorded outcome%n",
+                            notStarted, config.uploadFileCount);
+                }
                 summary = RunSummarizer.compute(db.connection(), config, config.uploadFileCount,
-                        succeeded.get(), failed.get(), totalBytes.get(), runDuration);
+                        succeeded.get(), failed.get(), notStarted, totalBytes.get(), runDuration);
+
+                progress.phase("Writing routing report and HTML charts");
+                Path routingJson = UploadRoutingReport.write(config);
+                new HtmlChartReport().generate(config);
+
+                Path reportPdf = null;
+                if (config.reportGeneratePdf) {
+                    progress.phase("Generating PDF report");
+                    reportPdf = new PdfChartReport().generate(config);
+                }
+                if (config.reportUploadPdfToBox) {
+                    if (reportPdf == null) {
+                        throw new IllegalStateException(
+                                "report.uploadPdfToBox requires report.generatePdf");
+                    }
+                    progress.phase("Uploading PDF report to Box run folder");
+                    String reportFileId = box.uploadReportFile(db, config.runId, threadMode,
+                            reportPdf, config.reportPdfFileName, runFolderId);
+                    progress.phase("Report file on Box: " + reportFileId);
+                }
 
                 if (config.cleanupDeleteBoxRunFolderAfterRun) {
                     progress.phase("Deleting Box run folder");
                     box.deleteFolder(runFolderId);
                 }
+
+                printSummary(config, routingJson, summary, reportPdf, failureSummary);
             }
 
             if (config.cleanupDeleteLocalPayloadAfterRun) {
                 Files.deleteIfExists(payload);
             }
-
-            progress.phase("Writing routing report and HTML charts");
-            Path routingJson = UploadRoutingReport.write(config);
-            new HtmlChartReport().generate(config);
-            printSummary(config, routingJson, summary);
         }
     }
 
-    private static void printSummary(AppConfig config, Path routingJson, RunSummary summary) throws Exception {
+    private static void printSummary(
+            AppConfig config,
+            Path routingJson,
+            RunSummary summary,
+            Path reportPdf,
+            UploadFailureReport.Summary failureSummary)
+            throws Exception {
         System.out.println();
         System.out.println("Run complete: " + config.runId);
         System.out.println("Results: " + config.runDirectory());
         System.out.println("Charts:  " + config.runDirectory().resolve("charts/index.html"));
+        if (reportPdf != null) {
+            System.out.println("Report:  " + reportPdf.toAbsolutePath());
+        }
         System.out.println("Routing: " + routingJson);
         System.out.println("SQLite:  " + config.sqlitePath());
         if (summary != null) {
@@ -200,6 +249,7 @@ public final class BenchmarkRunner {
         try (var conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + config.sqlitePath().toAbsolutePath())) {
             UploadRoutingReport.printToConsole(UploadRoutingReport.load(conn, config.runId));
         }
+        UploadFailureReport.printToConsole(failureSummary);
     }
 
     private static String sha256(Path path) throws Exception {

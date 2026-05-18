@@ -75,4 +75,26 @@ class ConfigLoaderTest {
         c.validate();
         assertEquals("run-abc", c.boxRunFolderName);
     }
+
+    @Test
+    void validateOverwritesStaleProfileRunFolderName() {
+        AppConfig c = new AppConfig();
+        c.boxClientId = "id";
+        c.boxClientSecret = "secret";
+        c.boxUserId = "user";
+        c.boxParentFolderId = "folder";
+        c.runId = "new-run-id";
+        c.boxRunFolderName = "old-saved-folder-id";
+        c.uploadThreadMode = ThreadMode.VIRTUAL;
+        c.validate();
+        assertEquals("new-run-id", c.boxRunFolderName);
+    }
+
+    @Test
+    void toMapOmitsRunFolderName() {
+        AppConfig c = new AppConfig();
+        c.boxRunFolderName = "should-not-be-saved";
+        Map<String, Object> box = (Map<String, Object>) ConfigLoader.toMap(c).get("box");
+        assertTrue(!box.containsKey("runFolderName"));
+    }
 }

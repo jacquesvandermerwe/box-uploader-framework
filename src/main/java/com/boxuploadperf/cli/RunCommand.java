@@ -49,6 +49,7 @@ public class RunCommand implements Runnable {
             if (profile != null && !profile.isBlank()) {
                 ProfileStore store = new ProfileStore(defaultProfilesDir());
                 config = store.load(profile.trim());
+                config.assignFreshRunIdentity();
                 source = "PROFILE";
             } else if (configPath != null) {
                 config = ConfigLoader.load(configPath);

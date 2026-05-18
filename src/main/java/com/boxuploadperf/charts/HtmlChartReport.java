@@ -2,14 +2,11 @@ package com.boxuploadperf.charts;
 
 import com.boxuploadperf.config.AppConfig;
 import com.boxuploadperf.metrics.RunReportData;
+import com.boxuploadperf.metrics.UploadFailureReport;
 import com.boxuploadperf.metrics.UploadRoutingReport;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -20,52 +17,29 @@ public final class HtmlChartReport {
         Path chartsDir = config.runDirectory().resolve("charts");
         Files.createDirectories(chartsDir);
 
-        List<String> uploadLabels = new ArrayList<>();
-        List<Double> uploadTimes = new ArrayList<>();
-        List<String> timeLabels = new ArrayList<>();
-        List<Double> cpu = new ArrayList<>();
-        List<Double> appMbps = new ArrayList<>();
+        RunChartData data = RunChartData.load(config);
         String configHtml = "";
         String metricsHtml = "";
-        String routingHtml = "";
-
-        try (var migrate = new com.boxuploadperf.metrics.MetricsDatabase(config.sqlitePath())) {
-            migrate.close();
+        if (data.report() != null) {
+            configHtml = buildConfigHtml(data.report());
+            metricsHtml = buildMetricsHtml(data.report());
         }
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + config.sqlitePath().toAbsolutePath())) {
-            RunReportData report = RunReportData.load(conn, config.runId);
-            if (report != null) {
-                configHtml = buildConfigHtml(report);
-                metricsHtml = buildMetricsHtml(report);
-            }
-            routingHtml = buildRoutingHtml(UploadRoutingReport.load(conn, config.runId));
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT upload_index, upload_duration_ms FROM file_uploads WHERE run_id = ? AND success = 1 ORDER BY upload_index")) {
-                ps.setString(1, config.runId);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        uploadLabels.add(String.valueOf(rs.getInt(1)));
-                        uploadTimes.add(rs.getDouble(2));
-                    }
-                }
-            }
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT elapsed_ms, cpu_process_pct, app_upload_mbps FROM resource_samples WHERE run_id = ? ORDER BY elapsed_ms")) {
-                ps.setString(1, config.runId);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        double sec = rs.getDouble(1) / 1000.0;
-                        timeLabels.add(String.format(Locale.US, "%.1f", sec));
-                        cpu.add(rs.getDouble(2));
-                        appMbps.add(rs.getDouble(3));
-                    }
-                }
-            }
+        String routingHtml = buildRoutingHtml(data.routing());
+        String failuresHtml = buildFailuresHtml(data.failures());
+
+        List<String> uploadLabels = new ArrayList<>();
+        for (Integer idx : data.uploadIndices()) {
+            uploadLabels.add(String.valueOf(idx));
+        }
+        List<String> timeLabels = new ArrayList<>();
+        for (Double sec : data.resourceElapsedSec()) {
+            timeLabels.add(String.format(Locale.US, "%.1f", sec));
         }
 
         Files.writeString(chartsDir.resolve("index.html"),
-                buildHtml(config.runId, configHtml, metricsHtml, routingHtml,
-                        uploadLabels, uploadTimes, timeLabels, cpu, appMbps));
+                buildHtml(config.runId, configHtml, metricsHtml, routingHtml, failuresHtml,
+                        uploadLabels, data.uploadDurationMs(), timeLabels, data.cpuProcessPct(),
+                        data.appUploadMbps()));
     }
 
     private static String buildConfigHtml(RunReportData report) {
@@ -114,6 +88,9 @@ public final class HtmlChartReport {
         row(sb, "Files attempted", String.valueOf(m.filesAttempted()));
         row(sb, "Files succeeded", String.valueOf(m.filesSucceeded()));
         row(sb, "Files failed", String.valueOf(m.filesFailed()));
+        if (m.filesNotStarted() > 0) {
+            row(sb, "Files not started", String.valueOf(m.filesNotStarted()));
+        }
         row(sb, "HTTP 429 responses", String.valueOf(m.count429()));
         if (m.retrySleepCount() > 0) {
             row(sb, "Retry wait (count / total / avg)",
@@ -149,6 +126,36 @@ public final class HtmlChartReport {
                 m.nicTxMbpsAvg(), m.nicTxMbpsPeak()));
         row(sb, "NIC RX Mbps avg / peak", String.format(Locale.US, "%.2f / %.2f",
                 m.nicRxMbpsAvg(), m.nicRxMbpsPeak()));
+        sb.append("</table></section>");
+        return sb.toString();
+    }
+
+    private static String buildFailuresHtml(UploadFailureReport.Summary failures) {
+        if (failures == null || failures.failures().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<section class=\"panel\"><h2>Failed uploads</h2><table>");
+        row(sb, "Failed count", String.valueOf(failures.filesFailed()));
+        for (var e : failures.failuresByReason().entrySet()) {
+            row(sb, e.getKey().name(), String.valueOf(e.getValue()));
+        }
+        sb.append("</table><h3>Sample failures</h3><table>");
+        sb.append("<tr><th>Index</th><th>Reason</th><th>Status</th><th>Attempts</th><th>Message</th></tr>");
+        int max = Math.min(40, failures.failures().size());
+        for (int i = 0; i < max; i++) {
+            var f = failures.failures().get(i);
+            sb.append("<tr><td>").append(f.uploadIndex()).append("</td><td>")
+                    .append(escape(f.failureReason().name())).append("</td><td>")
+                    .append(f.lastStatusCode()).append("</td><td>")
+                    .append(f.httpAttempts()).append("</td><td>")
+                    .append(escape(f.errorMessage() == null ? "" : f.errorMessage()))
+                    .append("</td></tr>");
+        }
+        if (failures.failures().size() > max) {
+            sb.append("<tr><td colspan=\"5\">… ")
+                    .append(failures.failures().size() - max)
+                    .append(" more (box-upload-perf failures --run-id …)</td></tr>");
+        }
         sb.append("</table></section>");
         return sb.toString();
     }
@@ -206,6 +213,7 @@ public final class HtmlChartReport {
     }
 
     private static String buildHtml(String runId, String configHtml, String metricsHtml, String routingHtml,
+                                    String failuresHtml,
                                     List<String> uploadLabels, List<Double> uploadTimes,
                                     List<String> timeLabels, List<Double> cpu, List<Double> appMbps) {
         return """
@@ -225,6 +233,7 @@ public final class HtmlChartReport {
                 </head><body>
                 <h1>Box Upload Performance</h1>
                 <p class="run-id">Run <code>%s</code></p>
+                %s
                 %s
                 %s
                 %s
@@ -259,7 +268,7 @@ public final class HtmlChartReport {
                 });
                 </script></body></html>
                 """.formatted(
-                runId, runId, configHtml, metricsHtml, routingHtml,
+                runId, runId, configHtml, metricsHtml, routingHtml, failuresHtml,
                 toJson(uploadLabels), toJson(uploadTimes),
                 toJson(timeLabels), toJson(cpu),
                 toJson(timeLabels), toJson(appMbps));

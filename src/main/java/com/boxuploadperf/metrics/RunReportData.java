@@ -37,6 +37,7 @@ public record RunReportData(Config config, Metrics metrics) {
             int filesAttempted,
             int filesSucceeded,
             int filesFailed,
+            int filesNotStarted,
             int count429,
             int ancillaryRequests,
             double uploadTimeMinMs,
@@ -135,7 +136,7 @@ public record RunReportData(Config config, Metrics metrics) {
 
     private static Metrics loadMetrics(Connection conn, String runId) throws Exception {
         try (PreparedStatement ps = conn.prepareStatement("""
-                SELECT files_attempted, files_succeeded, files_failed,
+                SELECT files_attempted, files_succeeded, files_failed, files_not_started,
                        count_429, ancillary_request_count,
                        upload_time_min_ms, upload_time_avg_ms, upload_time_max_ms,
                        upload_time_p95_ms, upload_time_p99_ms,
@@ -153,45 +154,49 @@ public record RunReportData(Config config, Metrics metrics) {
                 if (!rs.next()) {
                     return null;
                 }
-                Double cpuSystem = rs.getDouble(17);
+                int filesNotStarted = rs.getInt(4);
+                if (rs.wasNull()) {
+                    filesNotStarted = 0;
+                }
+                Double cpuSystem = rs.getDouble(18);
                 if (rs.wasNull()) {
                     cpuSystem = null;
                 }
-                int retrySleepCount = rs.getInt(24);
+                int retrySleepCount = rs.getInt(25);
                 if (rs.wasNull()) {
                     retrySleepCount = 0;
                 }
-                double retrySleepTotal = rs.getDouble(25);
+                double retrySleepTotal = rs.getDouble(26);
                 if (rs.wasNull()) {
                     retrySleepTotal = 0;
                 }
-                double retrySleepAvg = rs.getDouble(26);
+                double retrySleepAvg = rs.getDouble(27);
                 if (rs.wasNull()) {
                     retrySleepAvg = 0;
                 }
-                Double retryAfterAvg = rs.getDouble(27);
+                Double retryAfterAvg = rs.getDouble(28);
                 if (rs.wasNull()) {
                     retryAfterAvg = null;
                 }
-                Integer retryAfterMax = rs.getInt(28);
+                Integer retryAfterMax = rs.getInt(29);
                 if (rs.wasNull()) {
                     retryAfterMax = null;
                 }
-                int missingHeader = rs.getInt(29);
+                int missingHeader = rs.getInt(30);
                 if (rs.wasNull()) {
                     missingHeader = 0;
                 }
                 return new Metrics(
-                        rs.getInt(1), rs.getInt(2), rs.getInt(3),
-                        rs.getInt(4), rs.getInt(5),
-                        rs.getDouble(6), rs.getDouble(7), rs.getDouble(8),
-                        rs.getDouble(9), rs.getDouble(10),
-                        rs.getDouble(11), rs.getDouble(12),
-                        rs.getLong(13), rs.getDouble(14),
-                        rs.getDouble(15), rs.getDouble(16), cpuSystem,
-                        rs.getDouble(18), rs.getDouble(19),
-                        rs.getDouble(20), rs.getDouble(21),
-                        rs.getDouble(22), rs.getDouble(23),
+                        rs.getInt(1), rs.getInt(2), rs.getInt(3), filesNotStarted,
+                        rs.getInt(5), rs.getInt(6),
+                        rs.getDouble(7), rs.getDouble(8), rs.getDouble(9),
+                        rs.getDouble(10), rs.getDouble(11),
+                        rs.getDouble(12), rs.getDouble(13),
+                        rs.getLong(14), rs.getDouble(15),
+                        rs.getDouble(16), rs.getDouble(17), cpuSystem,
+                        rs.getDouble(19), rs.getDouble(20),
+                        rs.getDouble(21), rs.getDouble(22),
+                        rs.getDouble(23), rs.getDouble(24),
                         retrySleepCount, retrySleepTotal, retrySleepAvg,
                         retryAfterAvg, retryAfterMax, missingHeader);
             }

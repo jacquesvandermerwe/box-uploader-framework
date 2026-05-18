@@ -1,0 +1,21 @@
+# Example: generate PDF report locally and upload it to the Box run folder.
+profile:
+  name: report-upload-to-box
+  description: Upload benchmark-report.pdf into the run folder after each run
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+upload:
+  fileCount: 10
+  concurrency: 4
+  threadMode: VIRTUAL
+pdf:
+  targetSizeBytes: 1048576
+report:
+  generatePdf: true
+  uploadPdfToBox: true
+  pdfFileName: benchmark-report.pdf
+cleanup:
+  deleteBoxRunFolderAfterRun: false

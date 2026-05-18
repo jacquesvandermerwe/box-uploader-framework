@@ -5,7 +5,7 @@ import picocli.CommandLine.Command;
 
 @Command(name = "box-upload-perf", mixinStandardHelpOptions = true, version = "1.0.0",
         description = "Box Upload Performance Framework",
-        subcommands = {RunCommand.class, WizardCommand.class, ProfileCommand.class})
+        subcommands = {RunCommand.class, WizardCommand.class, ProfileCommand.class, FailuresCommand.class})
 public class BoxUploadPerfCommand implements Runnable {
 
     @Override

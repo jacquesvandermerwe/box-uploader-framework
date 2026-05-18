@@ -162,6 +162,11 @@ public final class MetricsDatabase implements AutoCloseable {
             ensureSummaryColumn(st, "retry_after_avg_sec", "REAL");
             ensureSummaryColumn(st, "retry_after_max_sec", "INTEGER");
             ensureSummaryColumn(st, "retry_429_missing_header_count", "INTEGER");
+            ensureFileUploadColumn(st, "failure_reason", "TEXT");
+            ensureFileUploadColumn(st, "error_message", "TEXT");
+            ensureFileUploadColumn(st, "last_status_code", "INTEGER");
+            ensureFileUploadColumn(st, "http_attempts", "INTEGER");
+            ensureSummaryColumn(st, "files_not_started", "INTEGER");
             st.execute("""
                     CREATE TABLE IF NOT EXISTS resource_samples (
                       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -272,6 +277,10 @@ public final class MetricsDatabase implements AutoCloseable {
         ensureTableColumn(st, "api_calls", column, sqlType);
     }
 
+    private static void ensureFileUploadColumn(Statement st, String column, String sqlType) throws SQLException {
+        ensureTableColumn(st, "file_uploads", column, sqlType);
+    }
+
     private static void ensureTableColumn(Statement st, String table, String column, String sqlType) throws SQLException {
         try (ResultSet cols = st.getConnection().getMetaData().getColumns(null, null, table, column)) {
             if (!cols.next()) {
@@ -360,6 +369,7 @@ public final class MetricsDatabase implements AutoCloseable {
         insertApiCall.setInt(32, t.connectionReused ? 1 : 0);
         insertApiCall.setDouble(33, t.totalNetworkMs());
         insertApiCall.executeUpdate();
+        connection.commit();
     }
 
     public void commit() throws SQLException {
@@ -368,42 +378,63 @@ public final class MetricsDatabase implements AutoCloseable {
         }
     }
 
-    public void rollback() throws SQLException {
+    /** Records a terminal upload outcome and commits immediately (safe under parallel uploads). */
+    public void recordFileUploadOutcome(FileUploadOutcome outcome) throws SQLException {
         synchronized (writeLock) {
-            connection.rollback();
+            try (PreparedStatement ps = connection.prepareStatement("""
+                    INSERT INTO file_uploads (
+                      run_id, upload_guid, upload_index, box_file_id, upload_strategy, chunk_count,
+                      success, upload_duration_ms, end_to_end_duration_ms, ancillary_call_count, had_429,
+                      failure_reason, error_message, last_status_code, http_attempts
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """)) {
+                ps.setString(1, outcome.runId());
+                ps.setString(2, outcome.uploadGuid());
+                ps.setInt(3, outcome.uploadIndex());
+                ps.setString(4, outcome.boxFileId());
+                ps.setString(5, outcome.uploadStrategy());
+                ps.setInt(6, outcome.chunkCount());
+                ps.setInt(7, outcome.success() ? 1 : 0);
+                ps.setDouble(8, outcome.uploadDurationMs());
+                ps.setDouble(9, outcome.endToEndMs());
+                ps.setInt(10, outcome.ancillaryCallCount());
+                ps.setInt(11, outcome.had429() ? 1 : 0);
+                if (outcome.failureReason() != null) {
+                    ps.setString(12, outcome.failureReason().name());
+                } else {
+                    ps.setNull(12, java.sql.Types.VARCHAR);
+                }
+                if (outcome.errorMessage() != null && !outcome.errorMessage().isBlank()) {
+                    ps.setString(13, outcome.errorMessage());
+                } else {
+                    ps.setNull(13, java.sql.Types.VARCHAR);
+                }
+                if (outcome.lastStatusCode() > 0) {
+                    ps.setInt(14, outcome.lastStatusCode());
+                } else {
+                    ps.setNull(14, java.sql.Types.INTEGER);
+                }
+                ps.setInt(15, outcome.httpAttempts());
+                ps.executeUpdate();
+            }
+            connection.commit();
         }
     }
 
+    /** @deprecated use {@link #recordFileUploadOutcome(FileUploadOutcome)} */
+    @Deprecated
     public void insertFileUpload(String runId, String uploadGuid, int uploadIndex, String boxFileId,
                                  String strategy, int chunkCount, boolean success,
-                                 double uploadDurationMs, double e2eMs, int ancillaryCount, boolean had429) throws SQLException {
-        synchronized (writeLock) {
-            insertFileUploadUnsafe(runId, uploadGuid, uploadIndex, boxFileId, strategy, chunkCount,
-                    success, uploadDurationMs, e2eMs, ancillaryCount, had429);
-        }
-    }
-
-    private void insertFileUploadUnsafe(String runId, String uploadGuid, int uploadIndex, String boxFileId,
-                                 String strategy, int chunkCount, boolean success,
-                                 double uploadDurationMs, double e2eMs, int ancillaryCount, boolean had429) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement("""
-                INSERT INTO file_uploads (
-                  run_id, upload_guid, upload_index, box_file_id, upload_strategy, chunk_count,
-                  success, upload_duration_ms, end_to_end_duration_ms, ancillary_call_count, had_429
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                """)) {
-            ps.setString(1, runId);
-            ps.setString(2, uploadGuid);
-            ps.setInt(3, uploadIndex);
-            ps.setString(4, boxFileId);
-            ps.setString(5, strategy);
-            ps.setInt(6, chunkCount);
-            ps.setInt(7, success ? 1 : 0);
-            ps.setDouble(8, uploadDurationMs);
-            ps.setDouble(9, e2eMs);
-            ps.setInt(10, ancillaryCount);
-            ps.setInt(11, had429 ? 1 : 0);
-            ps.executeUpdate();
+                                 double uploadDurationMs, double e2eMs, int ancillaryCount, boolean had429)
+            throws SQLException {
+        if (success) {
+            recordFileUploadOutcome(FileUploadOutcome.success(
+                    runId, uploadGuid, uploadIndex, boxFileId, strategy, chunkCount,
+                    uploadDurationMs, e2eMs, ancillaryCount, had429, 0));
+        } else {
+            recordFileUploadOutcome(FileUploadOutcome.failure(
+                    runId, uploadGuid, uploadIndex, strategy, UploadFailureReason.UNKNOWN,
+                    null, 0, 0, e2eMs));
         }
     }
 

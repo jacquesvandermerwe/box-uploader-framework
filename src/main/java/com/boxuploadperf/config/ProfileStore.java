@@ -89,7 +89,10 @@ public final class ProfileStore {
         copy.boxClientSecret = "***REDACTED***";
         DumperOptions opts = new DumperOptions();
         opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-        return new Yaml(opts).dump(ConfigLoader.toMap(copy));
+        Map<String, Object> root = ConfigLoader.toMap(copy);
+        ((Map<String, Object>) root.get("run")).put("runId", copy.runId);
+        ((Map<String, Object>) root.get("box")).put("runFolderName", copy.boxRunFolderName);
+        return new Yaml(opts).dump(root);
     }
 
     private static AppConfig copyForDisplay(AppConfig c) {
@@ -101,6 +104,8 @@ public final class ProfileStore {
         n.boxEnterpriseId = c.boxEnterpriseId;
         n.boxUserId = c.boxUserId;
         n.boxParentFolderId = c.boxParentFolderId;
+        n.runId = c.runId;
+        n.boxRunFolderName = c.boxRunFolderName;
         n.uploadFileCount = c.uploadFileCount;
         n.uploadConcurrency = c.uploadConcurrency;
         n.uploadThreadMode = c.uploadThreadMode;
