@@ -74,6 +74,9 @@ public final class AppConfig {
         if (isBlank(boxParentFolderId)) {
             throw new IllegalArgumentException("box.parentFolderId is required");
         }
+        if (isBlank(boxRunFolderName)) {
+            boxRunFolderName = runId;
+        }
         if (uploadThreadMode == null) {
             throw new IllegalArgumentException("upload.threadMode is required (VIRTUAL or PLATFORM)");
         }

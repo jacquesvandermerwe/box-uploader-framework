@@ -323,6 +323,9 @@ public final class BoxClient implements AutoCloseable {
     }
 
     private static String escapeJson(String s) {
+        if (s == null) {
+            return "";
+        }
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 

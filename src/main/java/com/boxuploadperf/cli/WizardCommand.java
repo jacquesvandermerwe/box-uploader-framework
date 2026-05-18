@@ -1,7 +1,9 @@
 package com.boxuploadperf.cli;
 
 import com.boxuploadperf.config.ProfileStore;
+import com.boxuploadperf.upload.BenchmarkRunner;
 import com.boxuploadperf.wizard.SetupWizard;
+import com.boxuploadperf.wizard.WizardResult;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -14,7 +16,11 @@ public class WizardCommand implements Runnable {
     @Override
     public void run() {
         try {
-            new SetupWizard(new ProfileStore(RunCommand.defaultProfilesDir()), saveOnly).run();
+            WizardResult result = new SetupWizard(new ProfileStore(RunCommand.defaultProfilesDir()), saveOnly).run();
+            if (result != null && result.runBenchmark()) {
+                result.config().validate();
+                new BenchmarkRunner().execute(result.config(), "WIZARD");
+            }
         } catch (Exception e) {
             System.err.println("Wizard failed: " + e.getMessage());
             e.printStackTrace();

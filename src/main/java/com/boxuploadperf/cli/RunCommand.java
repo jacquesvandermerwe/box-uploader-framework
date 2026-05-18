@@ -5,6 +5,7 @@ import com.boxuploadperf.config.ConfigLoader;
 import com.boxuploadperf.config.ProfileStore;
 import com.boxuploadperf.upload.BenchmarkRunner;
 import com.boxuploadperf.wizard.SetupWizard;
+import com.boxuploadperf.wizard.WizardResult;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -54,11 +55,15 @@ public class RunCommand implements Runnable {
                 source = "FILE";
             } else if (System.console() != null) {
                 SetupWizard wizard = new SetupWizard(new ProfileStore(defaultProfilesDir()), false);
-                config = wizard.run();
-                if (config == null) {
+                WizardResult wizardResult = wizard.run();
+                if (wizardResult == null) {
                     return;
                 }
+                config = wizardResult.config();
                 source = "WIZARD";
+                if (!wizardResult.runBenchmark()) {
+                    return;
+                }
             } else {
                 System.err.println("Provide --profile <name> or --config <path>, or run interactively.");
                 System.exit(1);

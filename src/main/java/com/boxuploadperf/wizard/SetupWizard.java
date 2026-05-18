@@ -3,7 +3,6 @@ package com.boxuploadperf.wizard;
 import com.boxuploadperf.config.AppConfig;
 import com.boxuploadperf.config.ProfileStore;
 import com.boxuploadperf.config.ThreadMode;
-import com.boxuploadperf.upload.BenchmarkRunner;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.terminal.Terminal;
@@ -22,7 +21,7 @@ public final class SetupWizard {
         this.saveOnly = saveOnly;
     }
 
-    public AppConfig run() throws Exception {
+    public WizardResult run() throws Exception {
         if (System.console() == null && System.getenv("CI") != null) {
             throw new IllegalStateException("No TTY: use --profile or --config in CI (wizard requires interactive terminal)");
         }
@@ -83,13 +82,9 @@ public final class SetupWizard {
             System.out.println("Saved profile: " + profiles.profilePath(config.profileName));
         }
 
-        if (action.toLowerCase(Locale.ROOT).startsWith("r") || action.toLowerCase(Locale.ROOT).startsWith("b")) {
-            if (!saveOnly) {
-                config.validate();
-                new BenchmarkRunner().execute(config, "WIZARD");
-            }
-        }
-        return config;
+        boolean runBenchmark = action.toLowerCase(Locale.ROOT).startsWith("r")
+                || action.toLowerCase(Locale.ROOT).startsWith("b");
+        return new WizardResult(config, runBenchmark && !saveOnly);
     }
 
     private String ask(String prompt, String defaultValue) {

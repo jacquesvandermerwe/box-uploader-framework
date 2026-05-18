@@ -61,4 +61,18 @@ class ConfigLoaderTest {
         c.boxParentFolderId = "d";
         assertThrows(IllegalArgumentException.class, c::validate);
     }
+
+    @Test
+    void validateDefaultsRunFolderNameToRunId() {
+        AppConfig c = new AppConfig();
+        c.boxClientId = "id";
+        c.boxClientSecret = "secret";
+        c.boxUserId = "user";
+        c.boxParentFolderId = "folder";
+        c.runId = "run-abc";
+        c.boxRunFolderName = null;
+        c.uploadThreadMode = ThreadMode.VIRTUAL;
+        c.validate();
+        assertEquals("run-abc", c.boxRunFolderName);
+    }
 }
