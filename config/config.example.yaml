@@ -18,6 +18,7 @@ upload:
   # >0 = custom cap for comparison. -1 = no baseline in summaries.
   # https://developer.box.com/guides/api-calls/permissions-and-errors/rate-limits
   rateLimitPerSecond: 0
+  enforceRateLimit: false
   threadMode: VIRTUAL
   chunkedUploadThresholdBytes: 52428800
   chunkSizeBytes: 52428800
@@ -26,6 +27,11 @@ pdf:
 work:
   parentDirectory: "./work"
   payloadFileName: "payload.pdf"
+  reusePayload: false
+retry:
+  maxAttempts: 3
+  # Fallback when 429 has no Retry-After; 429 with header uses Box Retry-After (seconds).
+  backoffMs: 500
 run:
   outputDirectory: "./results"
 cleanup:

@@ -62,11 +62,20 @@ Each run writes to `./results/<runId>/`:
 
 See [docs/USER_GUIDE.md](docs/USER_GUIDE.md#run-outputs-and-reports) for field-by-field explanations and [docs/examples/](docs/examples/) for sample output.
 
+## Run options
+
+```bash
+java -jar target/box-upload-perf-1.0.0-SNAPSHOT.jar run --profile my-benchmark \
+  --concurrency 8 --file-count 20 --enforce-rate-limit
+```
+
+Console output uses `[box-upload-perf]` progress lines during the run. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
+
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `run` | Execute benchmark (`--profile` or `--config`, or wizard) |
+| `run` | Execute benchmark (`--profile` or `--config`, or wizard); optional CLI overrides |
 | `wizard` | Setup wizard only (`--save-only` optional) |
 | `profile list` | List saved profiles |
 | `profile show <name>` | Show profile (secret redacted) |

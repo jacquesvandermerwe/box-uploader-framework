@@ -1,0 +1,24 @@
+# Client-side throttle at Box default (4 uploads/s) — for staying under API limits.
+profile:
+  name: rate-limit-enforced
+  description: Enforce Box 240/min upload pacing (4/s)
+box:
+  clientId: "your-client-id"
+  clientSecret: "your-client-secret"
+  enterpriseId: "your-enterprise-id"
+  parentFolderId: "your-parent-folder-id"
+upload:
+  fileCount: 20
+  concurrency: 8
+  threadMode: VIRTUAL
+  rateLimitPerSecond: 0
+  enforceRateLimit: true
+pdf:
+  targetSizeBytes: 1048576
+work:
+  reusePayload: true
+retry:
+  maxAttempts: 3
+  backoffMs: 500
+run:
+  outputDirectory: "./results"

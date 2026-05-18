@@ -3,6 +3,8 @@ package com.boxuploadperf.box;
 import com.boxuploadperf.config.AppConfig;
 import com.boxuploadperf.http.InstrumentedHttpClient;
 import com.boxuploadperf.http.NetworkTiming;
+import com.boxuploadperf.http.RetryAfterParser;
+import com.boxuploadperf.http.RetryDelayPolicy;
 import com.boxuploadperf.metrics.ApiCallRecord;
 import com.boxuploadperf.metrics.ApiPhase;
 import com.boxuploadperf.metrics.MetricsDatabase;
@@ -28,7 +30,6 @@ public final class BoxClient implements AutoCloseable {
 
     private static final URI TOKEN_URI = URI.create("https://api.box.com/oauth2/token");
     private static final String API_BASE = "https://api.box.com/2.0";
-
     private final AppConfig config;
     private final InstrumentedHttpClient http;
     private String accessToken;
@@ -45,36 +46,31 @@ public final class BoxClient implements AutoCloseable {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        var result = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        record(db, runId, null, null, ApiPhase.AUTH_TOKEN, true, false, "POST", TOKEN_URI.toString(),
-                result.response().statusCode(), result.timing(), threadMode, 1, null);
+        var result = sendWithRetry(db, runId, null, null, ApiPhase.AUTH_TOKEN, true, false,
+                request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
         if (result.response().statusCode() != 200) {
-            throw new IOException("CCG auth failed: " + result.response().statusCode() + " " + new String(result.response().body()));
+            throw new IOException("CCG auth failed: " + result.response().statusCode() + " "
+                    + new String(result.response().body()));
         }
         accessToken = extractJsonField(new String(result.response().body()), "access_token");
     }
 
     public String createRunFolder(MetricsDatabase db, String runId, String threadMode) throws Exception {
-        String json = "{\"name\":\"" + escapeJson(config.boxRunFolderName) + "\",\"parent\":{\"id\":\"" + config.boxParentFolderId + "\"}}";
+        String json = "{\"name\":\"" + escapeJson(config.boxRunFolderName) + "\",\"parent\":{\"id\":\""
+                + config.boxParentFolderId + "\"}}";
         HttpRequest request = HttpRequest.newBuilder(URI.create(API_BASE + "/folders"))
                 .header("Authorization", "Bearer " + accessToken)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
-        var result = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        record(db, runId, null, null, ApiPhase.FOLDER_CREATE, true, false, "POST",
-                RequestUrlMetrics.fromUri(request.uri()),
-                result.response().statusCode(), result.timing(), threadMode, 1, null);
+        var result = sendWithRetry(db, runId, null, null, ApiPhase.FOLDER_CREATE, true, false,
+                request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
         if (result.response().statusCode() != 201) {
             throw new IOException("Create folder failed: " + result.response().statusCode());
         }
         return extractJsonField(new String(result.response().body()), "id");
     }
 
-    /**
-     * One preflight per run (PRD §9.3): OPTIONS on API host, cache regional upload base like SDK
-     * {@code preflightFileUploadCheck} but reuse base for all files instead of per-file full URL.
-     */
     public UploadZoneContext resolveUploadZone(MetricsDatabase db, String runId, String threadMode,
                                                String parentFolderId, long payloadBytes) throws Exception {
         String body = String.format(
@@ -85,20 +81,15 @@ public final class BoxClient implements AutoCloseable {
                 .header("Content-Type", "application/json")
                 .method("OPTIONS", HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        var result = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        var result = sendWithRetry(db, runId, null, null, ApiPhase.PREFLIGHT_CHECK, true, false,
+                request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
         int status = result.response().statusCode();
         if (status != 200) {
-            record(db, runId, null, null, ApiPhase.PREFLIGHT_CHECK, true, false, "OPTIONS",
-                    RequestUrlMetrics.fromUri(request.uri()),
-                    status, result.timing(), threadMode, 1, null);
             throw new IOException("Upload preflight failed: " + status + " " + new String(result.response().body()));
         }
         String responseBody = new String(result.response().body());
         String uploadUrl = extractJsonField(responseBody, "upload_url");
         uploadZone = UploadZoneResolver.fromPreflightResponse(uploadUrl);
-        record(db, runId, null, null, ApiPhase.PREFLIGHT_CHECK, true, false, "OPTIONS",
-                RequestUrlMetrics.fromUri(URI.create(UploadZoneResolver.unescapeJsonString(uploadUrl))),
-                status, result.timing(), threadMode, 1, null);
         return uploadZone;
     }
 
@@ -116,7 +107,8 @@ public final class BoxClient implements AutoCloseable {
 
         if (!chunked) {
             NetworkTiming timing = new NetworkTiming();
-            String attributes = "{\"name\":\"" + escapeJson(fileName) + "\",\"parent\":{\"id\":\"" + parentFolderId + "\"}}";
+            String attributes = "{\"name\":\"" + escapeJson(fileName) + "\",\"parent\":{\"id\":\""
+                    + parentFolderId + "\"}}";
             byte[] body = buildMultipart(attributes, fileBytes, fileName);
             timing.requestBytes = body.length;
             long transferStart = System.nanoTime();
@@ -125,15 +117,13 @@ public final class BoxClient implements AutoCloseable {
                     .header("Content-Type", "multipart/form-data; boundary=boxperf")
                     .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                     .build();
-            var result = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            var result = sendWithRetry(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_SIMPLE, false, true,
+                    request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
             timing.transferMs = (System.nanoTime() - transferStart) / 1_000_000.0;
-            timing.durationMs += timing.transferMs;
+            timing.durationMs = result.timing().durationMs + timing.transferMs;
             timing.requestBytes = body.length;
             int status = result.response().statusCode();
             had429 = status == 429;
-            record(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_SIMPLE, false, true, "POST",
-                    RequestUrlMetrics.fromUri(request.uri()),
-                    status, timing, threadMode, 1, extractRetryAfter(result.response()));
             if (status != 201) {
                 throw new IOException("Upload failed: " + status);
             }
@@ -158,12 +148,10 @@ public final class BoxClient implements AutoCloseable {
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(sessionJson))
                 .build();
-        var sessionResult = http.send(createSession, HttpResponse.BodyHandlers.ofByteArray());
+        var sessionResult = sendWithRetry(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_SESSION_CREATE,
+                true, false, createSession, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
         ancillary++;
         had429 |= sessionResult.response().statusCode() == 429;
-        record(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_SESSION_CREATE, true, false, "POST",
-                RequestUrlMetrics.fromUri(createSession.uri()),
-                sessionResult.response().statusCode(), sessionResult.timing(), threadMode, 1, null);
         if (sessionResult.response().statusCode() != 200) {
             throw new IOException("Session create failed: " + sessionResult.response().statusCode());
         }
@@ -182,7 +170,6 @@ public final class BoxClient implements AutoCloseable {
             String sha1 = sha1Hex(part);
             partSha1s.add(sha1);
 
-            NetworkTiming partTiming = new NetworkTiming();
             HttpRequest partReq = HttpRequest.newBuilder(URI.create(uploadPartUrl))
                     .header("Authorization", uploadAuthHeader())
                     .header("Digest", "sha=" + sha1)
@@ -190,16 +177,11 @@ public final class BoxClient implements AutoCloseable {
                     .PUT(HttpRequest.BodyPublishers.ofByteArray(part))
                     .build();
             long partStart = System.nanoTime();
-            var partResult = http.send(partReq, HttpResponse.BodyHandlers.ofByteArray());
-            partTiming.transferMs = (System.nanoTime() - partStart) / 1_000_000.0;
-            partTiming.requestBytes = len;
-            partTiming.durationMs = partTiming.transferMs;
-            primaryMs += partTiming.transferMs;
+            var partResult = sendWithRetry(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_PART, false, true,
+                    partReq, HttpResponse.BodyHandlers.ofByteArray(), threadMode, chunkIndex, offset, len);
+            double partMs = (System.nanoTime() - partStart) / 1_000_000.0;
+            primaryMs += partMs;
             had429 |= partResult.response().statusCode() == 429;
-            record(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_PART, false, true, "PUT",
-                    RequestUrlMetrics.fromUri(partReq.uri()),
-                    partResult.response().statusCode(), partTiming, threadMode, 1, null,
-                    chunkIndex, offset, len);
             if (partResult.response().statusCode() != 200) {
                 throw new IOException("Part upload failed: " + partResult.response().statusCode());
             }
@@ -207,7 +189,9 @@ public final class BoxClient implements AutoCloseable {
 
         StringBuilder shaArray = new StringBuilder("[");
         for (int i = 0; i < partSha1s.size(); i++) {
-            if (i > 0) shaArray.append(',');
+            if (i > 0) {
+                shaArray.append(',');
+            }
             shaArray.append('"').append(partSha1s.get(i)).append('"');
         }
         shaArray.append(']');
@@ -218,12 +202,10 @@ public final class BoxClient implements AutoCloseable {
                 .header("Digest", "sha=" + sha1Hex(fileBytes))
                 .POST(HttpRequest.BodyPublishers.ofString(commitJson))
                 .build();
-        var commitResult = http.send(commitReq, HttpResponse.BodyHandlers.ofByteArray());
+        var commitResult = sendWithRetry(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_COMMIT, true, false,
+                commitReq, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
         ancillary++;
         had429 |= commitResult.response().statusCode() == 429;
-        record(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_COMMIT, true, false, "POST",
-                RequestUrlMetrics.fromUri(commitReq.uri()),
-                commitResult.response().statusCode(), commitResult.timing(), threadMode, 1, null);
         if (commitResult.response().statusCode() != 200 && commitResult.response().statusCode() != 201) {
             throw new IOException("Commit failed: " + commitResult.response().statusCode());
         }
@@ -240,24 +222,57 @@ public final class BoxClient implements AutoCloseable {
         http.send(req, HttpResponse.BodyHandlers.discarding());
     }
 
-    private void record(MetricsDatabase db, String runId, String uploadGuid, Integer uploadIndex,
-                          ApiPhase phase, boolean ancillary, boolean primary, String method, String url,
-                          int status, NetworkTiming timing, String threadMode, int attempt, Integer retryAfter) throws Exception {
-        record(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary, method, url, status, timing, threadMode, attempt, retryAfter, null, null, null);
+    private <T> InstrumentedHttpClient.HttpResult<T> sendWithRetry(
+            MetricsDatabase db, String runId, String uploadGuid, Integer uploadIndex,
+            ApiPhase phase, boolean ancillary, boolean primary,
+            HttpRequest request, HttpResponse.BodyHandler<T> handler, String threadMode,
+            Integer chunkIndex, Long chunkOffset, Integer chunkLength) throws Exception {
+        InterruptedException interrupted = null;
+        for (int attempt = 1; attempt <= config.retryMaxAttempts; attempt++) {
+            var result = http.send(request, handler);
+            int status = result.response().statusCode();
+            RetryAfterParser.OptionalInt parsedRetry = RetryAfterParser.parseSeconds(result.response());
+            Integer retryAfterSec = parsedRetry.isPresent() ? parsedRetry.getAsInt() : null;
+            boolean retryable = status == 429 || status >= 500;
+            RetryDelayPolicy.Delay delay = retryable && attempt < config.retryMaxAttempts
+                    ? RetryDelayPolicy.compute(status, retryAfterSec, attempt, config.retryBackoffMs)
+                    : null;
+            Long sleepMs = delay != null && delay.sleepMs() > 0 ? delay.sleepMs() : null;
+            String delaySource = delay != null && sleepMs != null ? delay.source().name() : null;
+            record(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary,
+                    request.method(), RequestUrlMetrics.fromUri(request.uri()),
+                    status, result.timing(), threadMode, attempt, retryAfterSec,
+                    chunkIndex, chunkOffset, chunkLength, sleepMs, delaySource);
+            if (!retryable || attempt >= config.retryMaxAttempts) {
+                return result;
+            }
+            try {
+                Thread.sleep(sleepMs != null ? sleepMs : 0L);
+            } catch (InterruptedException e) {
+                interrupted = e;
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        if (interrupted != null) {
+            throw interrupted;
+        }
+        throw new IOException("Request failed after " + config.retryMaxAttempts + " attempts: " + request.uri());
     }
 
     private void record(MetricsDatabase db, String runId, String uploadGuid, Integer uploadIndex,
                           ApiPhase phase, boolean ancillary, boolean primary, String method, String url,
-                          int status, NetworkTiming timing, String threadMode, int attempt, Integer retryAfter,
-                          Integer chunkIndex, Long chunkOffset, Integer chunkLength) throws Exception {
+                          int status, NetworkTiming timing, String threadMode, int attempt, Integer retryAfterSec,
+                          Integer chunkIndex, Long chunkOffset, Integer chunkLength,
+                          Long retrySleepMs, String retryDelaySource) throws Exception {
         db.insertApiCall(new ApiCallRecord(
                 runId, uploadGuid, null, uploadIndex, phase, chunkIndex, chunkOffset, chunkLength,
                 config.useChunkedUpload() ? "CHUNKED" : "SINGLE_STREAM",
                 ancillary, primary, Instant.now(), method, url, status, timing, threadMode, attempt,
-                status == 429, retryAfter, status >= 400 ? "HTTP " + status : null));
+                status == 429, retryAfterSec, status >= 400 ? "HTTP " + status : null,
+                retrySleepMs, retryDelaySource));
     }
 
-    /** Same as SDK {@code uploadWithPreflightCheck}: main access token on regional host. */
     private String uploadAuthHeader() {
         return "Bearer " + accessToken;
     }
@@ -322,13 +337,11 @@ public final class BoxClient implements AutoCloseable {
 
     private static String extractNested(String json, String object, String field) {
         int idx = json.indexOf("\"" + object + "\"");
-        if (idx < 0) throw new IllegalStateException("Missing " + object);
+        if (idx < 0) {
+            throw new IllegalStateException("Missing " + object);
+        }
         String sub = json.substring(idx);
         return extractJsonField(sub, field);
-    }
-
-    private static Integer extractRetryAfter(java.net.http.HttpResponse<?> response) {
-        return response.headers().firstValue("retry-after").map(Integer::parseInt).orElse(null);
     }
 
     @Override

@@ -51,8 +51,14 @@ public final class ConfigLoader {
                 c.uploadPlatformThreadPoolSize = intVal(upload.get("platformThreadPoolSize"), c.uploadConcurrency);
             }
             c.uploadRateLimitPerSecond = doubleVal(upload.get("rateLimitPerSecond"), c.uploadRateLimitPerSecond);
+            c.uploadEnforceRateLimit = bool(upload.get("enforceRateLimit"));
             c.uploadChunkedUploadThresholdBytes = longVal(upload.get("chunkedUploadThresholdBytes"), c.uploadChunkedUploadThresholdBytes);
             c.uploadChunkSizeBytes = longVal(upload.get("chunkSizeBytes"), c.uploadChunkSizeBytes);
+        }
+        Map<String, Object> retry = map(root.get("retry"));
+        if (retry != null) {
+            c.retryMaxAttempts = intVal(retry.get("maxAttempts"), c.retryMaxAttempts);
+            c.retryBackoffMs = longVal(retry.get("backoffMs"), c.retryBackoffMs);
         }
         Map<String, Object> pdf = map(root.get("pdf"));
         if (pdf != null) {
@@ -64,6 +70,7 @@ public final class ConfigLoader {
                 c.workParentDirectory = Path.of(str(work.get("parentDirectory")));
             }
             c.workPayloadFileName = strOr(work.get("payloadFileName"), c.workPayloadFileName);
+            c.workReusePayload = bool(work.get("reusePayload"));
         }
         Map<String, Object> cleanup = map(root.get("cleanup"));
         if (cleanup != null) {

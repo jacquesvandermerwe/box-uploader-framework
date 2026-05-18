@@ -2,6 +2,8 @@ package com.boxuploadperf.metrics;
 
 import com.boxuploadperf.config.AppConfig;
 
+import java.util.Locale;
+
 /** Aggregated run outcome for console and HTML reports. */
 public record RunSummary(
         int filesSucceeded,
@@ -15,7 +17,47 @@ public record RunSummary(
         double cpuProcessMaxPct,
         Double cpuSystemAvgPct,
         double appUploadMbpsAvg,
-        double appUploadMbpsPeak) {
+        double appUploadMbpsPeak,
+        RetryBackoffSummary retryBackoff) {
+
+  /** Backoff / {@code Retry-After} stats for the run (from {@code api_calls} and {@code run_summaries}). */
+    public record RetryBackoffSummary(
+            int retrySleepCount,
+            double retrySleepTotalMs,
+            double retrySleepAvgMs,
+            Double retryAfterHeaderAvgSec,
+            Integer retryAfterHeaderMaxSec,
+            int count429WithoutRetryAfter) {
+
+        public static RetryBackoffSummary none() {
+            return new RetryBackoffSummary(0, 0, 0, null, null, 0);
+        }
+
+        public String describe() {
+            if (retrySleepCount == 0 && count429WithoutRetryAfter == 0) {
+                return "No retry backoff (no 429 retries slept)";
+            }
+            StringBuilder sb = new StringBuilder();
+            if (retrySleepCount > 0) {
+                sb.append(String.format(Locale.US,
+                        "Retry wait: %d sleeps, %.0f ms total, %.0f ms avg",
+                        retrySleepCount, retrySleepTotalMs, retrySleepAvgMs));
+                if (retryAfterHeaderAvgSec != null) {
+                    sb.append(String.format(Locale.US,
+                            "; Retry-After header avg %.1f s, max %d s",
+                            retryAfterHeaderAvgSec, retryAfterHeaderMaxSec));
+                }
+            }
+            if (count429WithoutRetryAfter > 0) {
+                if (!sb.isEmpty()) {
+                    sb.append("; ");
+                }
+                sb.append(count429WithoutRetryAfter)
+                        .append("×429 without Retry-After (used exponential fallback)");
+            }
+            return sb.toString();
+        }
+    }
 
     public String rateLimitDescription() {
         if (rateLimitComparisonDisabled) {

@@ -56,7 +56,13 @@ public record RunReportData(Config config, Metrics metrics) {
             double nicTxMbpsAvg,
             double nicTxMbpsPeak,
             double nicRxMbpsAvg,
-            double nicRxMbpsPeak) {}
+            double nicRxMbpsPeak,
+            int retrySleepCount,
+            double retrySleepTotalMs,
+            double retrySleepAvgMs,
+            Double retryAfterAvgSec,
+            Integer retryAfterMaxSec,
+            int count429WithoutRetryAfter) {}
 
     public static RunReportData load(Connection conn, String runId) throws Exception {
         Config config = loadConfig(conn, runId);
@@ -137,7 +143,9 @@ public record RunReportData(Config config, Metrics metrics) {
                        total_bytes_uploaded, run_duration_ms,
                        cpu_process_avg_pct, cpu_process_max_pct, cpu_system_avg_pct,
                        app_upload_mbps_avg, app_upload_mbps_peak,
-                       nic_tx_mbps_avg, nic_tx_mbps_peak, nic_rx_mbps_avg, nic_rx_mbps_peak
+                       nic_tx_mbps_avg, nic_tx_mbps_peak, nic_rx_mbps_avg, nic_rx_mbps_peak,
+                       retry_sleep_count, retry_sleep_total_ms, retry_sleep_avg_ms,
+                       retry_after_avg_sec, retry_after_max_sec, retry_429_missing_header_count
                 FROM run_summaries WHERE run_id = ?
                 """)) {
             ps.setString(1, runId);
@@ -149,6 +157,30 @@ public record RunReportData(Config config, Metrics metrics) {
                 if (rs.wasNull()) {
                     cpuSystem = null;
                 }
+                int retrySleepCount = rs.getInt(24);
+                if (rs.wasNull()) {
+                    retrySleepCount = 0;
+                }
+                double retrySleepTotal = rs.getDouble(25);
+                if (rs.wasNull()) {
+                    retrySleepTotal = 0;
+                }
+                double retrySleepAvg = rs.getDouble(26);
+                if (rs.wasNull()) {
+                    retrySleepAvg = 0;
+                }
+                Double retryAfterAvg = rs.getDouble(27);
+                if (rs.wasNull()) {
+                    retryAfterAvg = null;
+                }
+                Integer retryAfterMax = rs.getInt(28);
+                if (rs.wasNull()) {
+                    retryAfterMax = null;
+                }
+                int missingHeader = rs.getInt(29);
+                if (rs.wasNull()) {
+                    missingHeader = 0;
+                }
                 return new Metrics(
                         rs.getInt(1), rs.getInt(2), rs.getInt(3),
                         rs.getInt(4), rs.getInt(5),
@@ -159,7 +191,9 @@ public record RunReportData(Config config, Metrics metrics) {
                         rs.getDouble(15), rs.getDouble(16), cpuSystem,
                         rs.getDouble(18), rs.getDouble(19),
                         rs.getDouble(20), rs.getDouble(21),
-                        rs.getDouble(22), rs.getDouble(23));
+                        rs.getDouble(22), rs.getDouble(23),
+                        retrySleepCount, retrySleepTotal, retrySleepAvg,
+                        retryAfterAvg, retryAfterMax, missingHeader);
             }
         }
     }
@@ -205,7 +239,10 @@ public record RunReportData(Config config, Metrics metrics) {
                 metrics.cpuProcessMaxPct(),
                 metrics.cpuSystemAvgPct(),
                 metrics.appUploadMbpsAvg(),
-                metrics.appUploadMbpsPeak()
+                metrics.appUploadMbpsPeak(),
+                new RunSummary.RetryBackoffSummary(
+                        metrics.retrySleepCount(), metrics.retrySleepTotalMs(), metrics.retrySleepAvgMs(),
+                        metrics.retryAfterAvgSec(), metrics.retryAfterMaxSec(), metrics.count429WithoutRetryAfter())
         ).rateLimitDescription();
     }
 }

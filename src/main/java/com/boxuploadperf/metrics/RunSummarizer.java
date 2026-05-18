@@ -37,12 +37,59 @@ public final class RunSummarizer {
 
         int count429;
         int ancillary;
+        double retrySleepTotalMs = 0;
+        double retrySleepAvgMs = 0;
+        int retrySleepCount = 0;
+        Double retryAfterAvgSec = null;
+        Integer retryAfterMaxSec = null;
+        int count429MissingHeader = 0;
         try (PreparedStatement c = conn.prepareStatement(
                 "SELECT COUNT(*) FROM api_calls WHERE run_id = ? AND rate_limited = 1")) {
             c.setString(1, runId);
             try (ResultSet rs = c.executeQuery()) {
                 rs.next();
                 count429 = rs.getInt(1);
+            }
+        }
+        try (PreparedStatement c = conn.prepareStatement("""
+                SELECT COALESCE(SUM(retry_sleep_ms), 0), COALESCE(AVG(retry_sleep_ms), 0), COUNT(retry_sleep_ms)
+                FROM api_calls WHERE run_id = ? AND retry_sleep_ms IS NOT NULL
+                """)) {
+            c.setString(1, runId);
+            try (ResultSet rs = c.executeQuery()) {
+                if (rs.next()) {
+                    retrySleepTotalMs = rs.getDouble(1);
+                    retrySleepAvgMs = rs.getDouble(2);
+                    retrySleepCount = rs.getInt(3);
+                }
+            }
+        }
+        try (PreparedStatement c = conn.prepareStatement("""
+                SELECT AVG(retry_after_seconds), MAX(retry_after_seconds)
+                FROM api_calls WHERE run_id = ? AND rate_limited = 1 AND retry_after_seconds IS NOT NULL
+                """)) {
+            c.setString(1, runId);
+            try (ResultSet rs = c.executeQuery()) {
+                if (rs.next()) {
+                    double headerAvg = rs.getDouble(1);
+                    if (!rs.wasNull()) {
+                        retryAfterAvgSec = headerAvg;
+                    }
+                    int headerMax = rs.getInt(2);
+                    if (!rs.wasNull()) {
+                        retryAfterMaxSec = headerMax;
+                    }
+                }
+            }
+        }
+        try (PreparedStatement c = conn.prepareStatement("""
+                SELECT COUNT(*) FROM api_calls
+                WHERE run_id = ? AND rate_limited = 1 AND retry_after_seconds IS NULL
+                """)) {
+            c.setString(1, runId);
+            try (ResultSet rs = c.executeQuery()) {
+                rs.next();
+                count429MissingHeader = rs.getInt(1);
             }
         }
         try (PreparedStatement c = conn.prepareStatement(
@@ -96,6 +143,9 @@ public final class RunSummarizer {
         double effectiveRateLimit = config.effectiveUploadRateLimitPerSecond();
         boolean rateLimitExplicit = config.uploadRateLimitExplicit();
         int rateLimitMode = rateLimitDisabled ? -1 : (rateLimitExplicit ? 1 : 0);
+        RunSummary.RetryBackoffSummary backoff = new RunSummary.RetryBackoffSummary(
+                retrySleepCount, retrySleepTotalMs, retrySleepAvgMs,
+                retryAfterAvgSec, retryAfterMaxSec, count429MissingHeader);
 
         try (PreparedStatement ps = conn.prepareStatement("""
                 INSERT OR REPLACE INTO run_summaries (
@@ -107,8 +157,10 @@ public final class RunSummarizer {
                   cpu_process_avg_pct, cpu_process_max_pct, cpu_system_avg_pct,
                   app_upload_mbps_avg, app_upload_mbps_peak,
                   nic_tx_mbps_avg, nic_tx_mbps_peak, nic_rx_mbps_avg, nic_rx_mbps_peak,
-                  configured_rate_limit_per_sec, configured_concurrency, rate_limit_explicit
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                  configured_rate_limit_per_sec, configured_concurrency, rate_limit_explicit,
+                  retry_sleep_total_ms, retry_sleep_avg_ms, retry_sleep_count,
+                  retry_after_avg_sec, retry_after_max_sec, retry_429_missing_header_count
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """)) {
             int i = 1;
             ps.setString(i++, runId);
@@ -146,12 +198,27 @@ public final class RunSummarizer {
             }
             ps.setInt(i++, config.uploadConcurrency);
             ps.setInt(i++, rateLimitMode);
+            ps.setDouble(i++, retrySleepTotalMs);
+            ps.setDouble(i++, retrySleepAvgMs);
+            ps.setInt(i++, retrySleepCount);
+            if (retryAfterAvgSec != null) {
+                ps.setDouble(i++, retryAfterAvgSec);
+            } else {
+                ps.setNull(i++, Types.REAL);
+            }
+            if (retryAfterMaxSec != null) {
+                ps.setInt(i++, retryAfterMaxSec);
+            } else {
+                ps.setNull(i++, Types.INTEGER);
+            }
+            ps.setInt(i++, count429MissingHeader);
             ps.executeUpdate();
             conn.commit();
         }
 
         return new RunSummary(succeeded, failed, throughputFiles, effectiveRateLimit, rateLimitExplicit,
-                rateLimitDisabled, config.uploadConcurrency, cpuAvg, cpuMax, cpuSystemAvg, appMbpsAvg, appMbpsPeak);
+                rateLimitDisabled, config.uploadConcurrency, cpuAvg, cpuMax, cpuSystemAvg, appMbpsAvg, appMbpsPeak,
+                backoff);
     }
 
     public static RunSummary load(Connection conn, String runId) throws Exception {
@@ -186,7 +253,8 @@ public final class RunSummarizer {
                         rs.getInt(1), rs.getInt(2), rs.getDouble(3),
                         effectiveLimit, explicit, disabled, rs.getInt(5),
                         rs.getDouble(7), rs.getDouble(8), cpuSystem,
-                        rs.getDouble(10), rs.getDouble(11));
+                        rs.getDouble(10), rs.getDouble(11),
+                        RunSummary.RetryBackoffSummary.none());
             }
         }
     }

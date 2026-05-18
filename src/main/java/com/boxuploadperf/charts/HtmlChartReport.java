@@ -29,6 +29,9 @@ public final class HtmlChartReport {
         String metricsHtml = "";
         String routingHtml = "";
 
+        try (var migrate = new com.boxuploadperf.metrics.MetricsDatabase(config.sqlitePath())) {
+            migrate.close();
+        }
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + config.sqlitePath().toAbsolutePath())) {
             RunReportData report = RunReportData.load(conn, config.runId);
             if (report != null) {
@@ -112,6 +115,18 @@ public final class HtmlChartReport {
         row(sb, "Files succeeded", String.valueOf(m.filesSucceeded()));
         row(sb, "Files failed", String.valueOf(m.filesFailed()));
         row(sb, "HTTP 429 responses", String.valueOf(m.count429()));
+        if (m.retrySleepCount() > 0) {
+            row(sb, "Retry wait (count / total / avg)",
+                    String.format(Locale.US, "%d / %.0f ms / %.0f ms",
+                            m.retrySleepCount(), m.retrySleepTotalMs(), m.retrySleepAvgMs()));
+        }
+        if (m.retryAfterAvgSec() != null) {
+            row(sb, "Retry-After header (avg / max)",
+                    String.format(Locale.US, "%.1f s / %d s", m.retryAfterAvgSec(), m.retryAfterMaxSec()));
+        }
+        if (m.count429WithoutRetryAfter() > 0) {
+            row(sb, "429 without Retry-After", String.valueOf(m.count429WithoutRetryAfter()));
+        }
         row(sb, "Ancillary API calls", String.valueOf(m.ancillaryRequests()));
         row(sb, "Upload time (min)", formatMs(m.uploadTimeMinMs()));
         row(sb, "Upload time (avg)", formatMs(m.uploadTimeAvgMs()));

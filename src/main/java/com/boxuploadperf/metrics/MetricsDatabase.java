@@ -38,9 +38,10 @@ public final class MetricsDatabase implements AutoCloseable {
                   upload_strategy, is_ancillary, is_primary_upload, timestamp, http_method, url_template,
                   status_code, duration_ms, request_bytes, response_bytes, upload_mbps, thread_mode, attempt,
                   rate_limited, retry_after_seconds, error_message,
+                  retry_sleep_ms, retry_delay_source,
                   dns_lookup_ms, tcp_connect_ms, tls_handshake_ms, time_to_first_byte_ms, transfer_ms,
                   connection_reused, total_network_ms
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """);
     }
 
@@ -153,6 +154,14 @@ public final class MetricsDatabase implements AutoCloseable {
             ensureSummaryColumn(st, "configured_rate_limit_per_sec", "REAL");
             ensureSummaryColumn(st, "configured_concurrency", "INTEGER");
             ensureSummaryColumn(st, "rate_limit_explicit", "INTEGER");
+            ensureApiCallsColumn(st, "retry_sleep_ms", "REAL");
+            ensureApiCallsColumn(st, "retry_delay_source", "TEXT");
+            ensureSummaryColumn(st, "retry_sleep_total_ms", "REAL");
+            ensureSummaryColumn(st, "retry_sleep_avg_ms", "REAL");
+            ensureSummaryColumn(st, "retry_sleep_count", "INTEGER");
+            ensureSummaryColumn(st, "retry_after_avg_sec", "REAL");
+            ensureSummaryColumn(st, "retry_after_max_sec", "INTEGER");
+            ensureSummaryColumn(st, "retry_429_missing_header_count", "INTEGER");
             st.execute("""
                     CREATE TABLE IF NOT EXISTS resource_samples (
                       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -259,6 +268,10 @@ public final class MetricsDatabase implements AutoCloseable {
         ensureTableColumn(st, "run_summaries", column, sqlType);
     }
 
+    private static void ensureApiCallsColumn(Statement st, String column, String sqlType) throws SQLException {
+        ensureTableColumn(st, "api_calls", column, sqlType);
+    }
+
     private static void ensureTableColumn(Statement st, String table, String column, String sqlType) throws SQLException {
         try (ResultSet cols = st.getConnection().getMetaData().getColumns(null, null, table, column)) {
             if (!cols.next()) {
@@ -332,13 +345,19 @@ public final class MetricsDatabase implements AutoCloseable {
             insertApiCall.setNull(23, java.sql.Types.INTEGER);
         }
         insertApiCall.setString(24, r.errorMessage());
-        insertApiCall.setDouble(25, t.dnsLookupMs);
-        insertApiCall.setDouble(26, t.tcpConnectMs);
-        insertApiCall.setDouble(27, t.tlsHandshakeMs);
-        insertApiCall.setDouble(28, t.timeToFirstByteMs);
-        insertApiCall.setDouble(29, t.transferMs);
-        insertApiCall.setInt(30, t.connectionReused ? 1 : 0);
-        insertApiCall.setDouble(31, t.totalNetworkMs());
+        if (r.retrySleepMs() != null) {
+            insertApiCall.setDouble(25, r.retrySleepMs());
+        } else {
+            insertApiCall.setNull(25, java.sql.Types.REAL);
+        }
+        insertApiCall.setString(26, r.retryDelaySource());
+        insertApiCall.setDouble(27, t.dnsLookupMs);
+        insertApiCall.setDouble(28, t.tcpConnectMs);
+        insertApiCall.setDouble(29, t.tlsHandshakeMs);
+        insertApiCall.setDouble(30, t.timeToFirstByteMs);
+        insertApiCall.setDouble(31, t.transferMs);
+        insertApiCall.setInt(32, t.connectionReused ? 1 : 0);
+        insertApiCall.setDouble(33, t.totalNetworkMs());
         insertApiCall.executeUpdate();
     }
 

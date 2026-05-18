@@ -97,8 +97,8 @@ If the process appears idle for a while, that is usually expected: most setup wo
 ### What you can do
 
 - Use a **smaller** `pdf.targetSizeBytes` for smoke tests (e.g. 256 KiB).
-- Reuse an existing payload only if you change the tool to skip regeneration (not supported today; each run regenerates).
-- Expect **no per-phase console lines** until the run finishes (see below).
+- Set `work.reusePayload: true` to skip PDF generation when `work/payload.pdf` already matches the target size (±2%).
+- Watch **`[box-upload-perf]`** lines on the console for phase and upload progress (see below).
 
 ---
 
@@ -106,14 +106,22 @@ If the process appears idle for a while, that is usually expected: most setup wo
 
 ### During the run
 
-The application prints **little or nothing** while work is in progress. Feedback appears mainly **at the end**:
+Lines prefixed with `[box-upload-perf]` report:
 
-- Run ID and paths to `results/<runId>/`
-- Throughput summary (effective files/s vs rate-limit baseline)
-- CPU and app upload Mbps (from `resource_samples`)
-- Upload routing summary (zone host, URLs by phase, warnings)
+- Setup phases (payload, auth, folder, preflight, zone host)
+- Upload progress every ~2s: `N/M succeeded`, failures, 429 count, files/s, ETA
+- Per-failure messages: `Upload <index> failed: …`
+- Post-run steps (summary, charts)
 
-There is currently **no** live “upload 12/50” progress on the console.
+At the **end** you also get paths, throughput, CPU/Mbps, and routing.
+
+### CLI overrides (no profile edit)
+
+```bash
+java -jar target/box-upload-perf-1.0.0-SNAPSHOT.jar run --profile my-benchmark \
+  --concurrency 16 --file-count 20 --thread-mode VIRTUAL \
+  --rate-limit 2.0 --enforce-rate-limit --payload-bytes 524288
+```
 
 ### End-of-run example
 
@@ -191,7 +199,8 @@ Every key the loader understands, with defaults when omitted.
 | `concurrency` | int | `32` | Max simultaneous in-flight uploads (semaphore). |
 | `threadMode` | `VIRTUAL` \| `PLATFORM` | — | **Required.** `VIRTUAL` = virtual thread per task; `PLATFORM` = fixed platform thread pool. |
 | `platformThreadPoolSize` | int | same as `concurrency` | Pool size when `threadMode` is `PLATFORM`. |
-| `rateLimitPerSecond` | double | `0` | **Reporting baseline only** (not enforced). See [Rate limit settings](#rate-limit-settings). |
+| `rateLimitPerSecond` | double | `0` | Comparison baseline; see [Rate limit settings](#rate-limit-settings). |
+| `enforceRateLimit` | bool | `false` | When `true`, throttle upload **starts** to the effective limit (Box 4/s when `rateLimitPerSecond` is `0`). |
 | `chunkedUploadThresholdBytes` | long | `52428800` (50 MiB) | Payload size at or above this uses chunked upload API. |
 | `chunkSizeBytes` | long | `52428800` | Part size for chunked uploads. Must be ≤ payload size when chunked. |
 
@@ -207,6 +216,16 @@ Every key the loader understands, with defaults when omitted.
 |-----|------|---------|-------------|
 | `parentDirectory` | path | `./work` | Directory for generated payload. |
 | `payloadFileName` | string | `payload.pdf` | Payload filename under `parentDirectory`. |
+| `reusePayload` | bool | `false` | Skip PDF generation if existing file size is within ±2% of target. |
+
+### `retry`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `maxAttempts` | int | `3` | HTTP retries per call on 429 or 5xx (each attempt is a row in `api_calls`). |
+| `backoffMs` | long | `500` | **Fallback only** when Box does not send `Retry-After` on 429, or on 5xx (exponential: base × 2<sup>attempt−1</sup>). On 429, [Box’s `Retry-After` header](https://developer.box.com/guides/api-calls/permissions-and-errors/rate-limits) (seconds) is honored instead. |
+
+Per-run summaries include **retry wait total/avg**, **Retry-After header avg/max**, and count of 429s missing the header. Each `api_calls` row stores `retry_after_seconds`, `retry_sleep_ms`, and `retry_delay_source` (`RETRY_AFTER`, `EXPONENTIAL_429`, `EXPONENTIAL_5XX`).
 
 ### `run`
 
@@ -245,6 +264,8 @@ Every key the loader understands, with defaults when omitted.
 | `0` (default) | Compare throughput to Box’s documented upload API limit: **240 uploads/min (4/s)**. |
 | `> 0` | Compare to your custom cap (e.g. `2.0` = 2 uploads/s). |
 | `< 0` (e.g. `-1`) | **No** rate-limit baseline; summary shows effective throughput and concurrency only. |
+
+Set `upload.enforceRateLimit: true` (or `--enforce-rate-limit`) to **throttle** upload starts to that same effective limit. Cannot be combined with `rateLimitPerSecond: -1`.
 
 Reference: [Box rate limits](https://developer.box.com/guides/api-calls/permissions-and-errors/rate-limits).
 

@@ -19,6 +19,27 @@ public class RunCommand implements Runnable {
     @Option(names = "--config", description = "Path to YAML config file")
     Path configPath;
 
+    @Option(names = "--file-count", description = "Override upload.fileCount")
+    Integer fileCount;
+
+    @Option(names = "--concurrency", description = "Override upload.concurrency")
+    Integer concurrency;
+
+    @Option(names = "--thread-mode", description = "Override upload.threadMode (VIRTUAL or PLATFORM)")
+    String threadMode;
+
+    @Option(names = "--rate-limit", description = "Override upload.rateLimitPerSecond")
+    Double rateLimit;
+
+    @Option(names = "--enforce-rate-limit", description = "Throttle uploads to effective rate limit")
+    Boolean enforceRateLimit;
+
+    @Option(names = "--payload-bytes", description = "Override pdf.targetSizeBytes")
+    Long payloadBytes;
+
+    @Option(names = "--run-id", description = "Override run.runId (and Box run folder name)")
+    String runId;
+
     @Override
     public void run() {
         try {
@@ -38,12 +59,13 @@ public class RunCommand implements Runnable {
                     return;
                 }
                 source = "WIZARD";
-                return;
             } else {
                 System.err.println("Provide --profile <name> or --config <path>, or run interactively.");
                 System.exit(1);
                 return;
             }
+            ConfigOverrides.apply(config, fileCount, concurrency, threadMode, rateLimit,
+                    enforceRateLimit, payloadBytes, runId);
             config.validate();
             new BenchmarkRunner().execute(config, source);
         } catch (Exception e) {

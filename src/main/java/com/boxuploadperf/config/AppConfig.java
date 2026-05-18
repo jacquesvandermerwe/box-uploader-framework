@@ -32,11 +32,18 @@ public final class AppConfig {
    * Negative = no rate-limit baseline for this run.
    */
     public double uploadRateLimitPerSecond;
+    /** When true, throttle upload starts to {@link #effectiveUploadRateLimitPerSecond()}. */
+    public boolean uploadEnforceRateLimit;
     public long uploadChunkedUploadThresholdBytes = 52_428_800L;
     public long uploadChunkSizeBytes = 52_428_800L;
 
+    public int retryMaxAttempts = 3;
+    public long retryBackoffMs = 500L;
+
     public Path workParentDirectory = Path.of("./work");
     public String workPayloadFileName = "payload.pdf";
+    /** Skip PDF generation when an existing payload file matches target size. */
+    public boolean workReusePayload;
 
     public long pdfTargetSizeBytes = 1_048_576L;
 
@@ -85,6 +92,20 @@ public final class AppConfig {
         if (pdfTargetSizeBytes >= uploadChunkedUploadThresholdBytes && uploadChunkSizeBytes > pdfTargetSizeBytes) {
             throw new IllegalArgumentException("upload.chunkSizeBytes must be <= pdf.targetSizeBytes when using chunked uploads");
         }
+        if (retryMaxAttempts < 1) {
+            throw new IllegalArgumentException("retry.maxAttempts must be >= 1");
+        }
+        if (retryBackoffMs < 0) {
+            throw new IllegalArgumentException("retry.backoffMs must be >= 0");
+        }
+        if (uploadEnforceRateLimit && uploadRateLimitDisabled()) {
+            throw new IllegalArgumentException(
+                    "upload.enforceRateLimit cannot be used with rateLimitPerSecond < 0");
+        }
+    }
+
+    public boolean shouldEnforceRateLimit() {
+        return uploadEnforceRateLimit && !uploadRateLimitDisabled();
     }
 
     public int platformPoolSize() {

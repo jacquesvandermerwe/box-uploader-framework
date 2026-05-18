@@ -6,6 +6,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfigLoaderTest {
 
@@ -26,6 +27,29 @@ class ConfigLoaderTest {
         assertEquals("id", c.boxClientId);
         assertEquals(5, c.uploadFileCount);
         assertEquals(ThreadMode.VIRTUAL, c.uploadThreadMode);
+    }
+
+    @Test
+    void loadsRetryAndEnforceRateLimit() {
+        AppConfig c = ConfigLoader.fromMap(Map.of(
+                "box", Map.of(
+                        "clientId", "id",
+                        "clientSecret", "secret",
+                        "enterpriseId", "ent",
+                        "parentFolderId", "folder"),
+                "upload", Map.of(
+                        "fileCount", 5,
+                        "concurrency", 2,
+                        "threadMode", "VIRTUAL",
+                        "enforceRateLimit", true,
+                        "rateLimitPerSecond", 2.0),
+                "retry", Map.of("maxAttempts", 5, "backoffMs", 1000),
+                "work", Map.of("reusePayload", true),
+                "pdf", Map.of("targetSizeBytes", 1024)));
+        assertEquals(5, c.retryMaxAttempts);
+        assertEquals(1000L, c.retryBackoffMs);
+        assertTrue(c.uploadEnforceRateLimit);
+        assertTrue(c.workReusePayload);
     }
 
     @Test

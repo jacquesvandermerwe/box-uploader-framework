@@ -25,5 +25,9 @@ public record ApiCallRecord(
         int attempt,
         boolean rateLimited,
         Integer retryAfterSeconds,
-        String errorMessage) {
+        String errorMessage,
+        /** Milliseconds slept before the next attempt after this response; null if no retry. */
+        Long retrySleepMs,
+        /** {@link com.boxuploadperf.http.RetryDelayPolicy.DelaySource} name when {@code retrySleepMs} is set. */
+        String retryDelaySource) {
 }
