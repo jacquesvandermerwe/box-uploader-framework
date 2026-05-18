@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 public final class PdfPayloadGenerator {
 
@@ -62,6 +63,7 @@ public final class PdfPayloadGenerator {
         try (OutputStream out = Files.newOutputStream(path,
                 java.nio.file.StandardOpenOption.APPEND)) {
             byte[] chunk = new byte[8192];
+            Arrays.fill(chunk, (byte) ' ');
             long remaining = extraBytes;
             while (remaining > 0) {
                 int n = (int) Math.min(chunk.length, remaining);

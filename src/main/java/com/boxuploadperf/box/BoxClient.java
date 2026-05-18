@@ -111,7 +111,6 @@ public final class BoxClient implements AutoCloseable {
                     + parentFolderId + "\"}}";
             byte[] body = buildMultipart(attributes, fileBytes, fileName);
             timing.requestBytes = body.length;
-            long transferStart = System.nanoTime();
             HttpRequest request = HttpRequest.newBuilder(URI.create(uploadZone.uploadBaseUrl() + "/files/content"))
                     .header("Authorization", uploadAuthHeader())
                     .header("Content-Type", "multipart/form-data; boundary=boxperf")
@@ -119,9 +118,15 @@ public final class BoxClient implements AutoCloseable {
                     .build();
             var result = sendWithRetry(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_SIMPLE, false, true,
                     request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
-            timing.transferMs = (System.nanoTime() - transferStart) / 1_000_000.0;
-            timing.durationMs = result.timing().durationMs + timing.transferMs;
-            timing.requestBytes = body.length;
+            NetworkTiming httpTiming = result.timing();
+            timing.transferMs = httpTiming.durationMs;
+            timing.durationMs = httpTiming.durationMs;
+            timing.timeToFirstByteMs = httpTiming.timeToFirstByteMs;
+            timing.dnsLookupMs = httpTiming.dnsLookupMs;
+            timing.tcpConnectMs = httpTiming.tcpConnectMs;
+            timing.tlsHandshakeMs = httpTiming.tlsHandshakeMs;
+            timing.connectionReused = httpTiming.connectionReused;
+            timing.responseBytes = httpTiming.responseBytes;
             int status = result.response().statusCode();
             had429 = status == 429;
             if (status != 201) {
