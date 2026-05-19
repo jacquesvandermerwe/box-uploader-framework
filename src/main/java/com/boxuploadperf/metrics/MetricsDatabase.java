@@ -40,8 +40,8 @@ public final class MetricsDatabase implements AutoCloseable {
                   rate_limited, retry_after_seconds, error_message,
                   retry_sleep_ms, retry_delay_source,
                   dns_lookup_ms, tcp_connect_ms, tls_handshake_ms, time_to_first_byte_ms, transfer_ms,
-                  connection_reused, total_network_ms
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                  connection_reused, total_network_ms, as_user_id
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """);
     }
 
@@ -156,6 +156,7 @@ public final class MetricsDatabase implements AutoCloseable {
             ensureSummaryColumn(st, "rate_limit_explicit", "INTEGER");
             ensureApiCallsColumn(st, "retry_sleep_ms", "REAL");
             ensureApiCallsColumn(st, "retry_delay_source", "TEXT");
+            ensureApiCallsColumn(st, "as_user_id", "TEXT");
             ensureSummaryColumn(st, "retry_sleep_total_ms", "REAL");
             ensureSummaryColumn(st, "retry_sleep_avg_ms", "REAL");
             ensureSummaryColumn(st, "retry_sleep_count", "INTEGER");
@@ -368,6 +369,11 @@ public final class MetricsDatabase implements AutoCloseable {
         insertApiCall.setDouble(31, t.transferMs);
         insertApiCall.setInt(32, t.connectionReused ? 1 : 0);
         insertApiCall.setDouble(33, t.totalNetworkMs());
+        if (r.asUserId() != null) {
+            insertApiCall.setString(34, r.asUserId());
+        } else {
+            insertApiCall.setNull(34, java.sql.Types.VARCHAR);
+        }
         insertApiCall.executeUpdate();
         connection.commit();
     }

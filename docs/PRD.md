@@ -253,7 +253,7 @@ On **pooled connection reuse**, phase times for DNS/TCP/TLS are **zero** and `co
 | `box.clientId` | string | CCG client ID | wizard / profile (**required**) |
 | `box.clientSecret` | string | CCG client secret | wizard / profile (**required**) |
 | `box.enterpriseId` | string | Enterprise ID | wizard / profile (**required**) |
-| `box.userId` | string | Optional CCG subject user | — |
+| `box.userId` | string | Optional comma-separated user IDs for `As-User` impersonation (enterprise token) | — |
 | `box.parentFolderId` | string | Parent folder; app creates a **child run folder** here | required |
 | `box.runFolderName` | string | Name for run subfolder; default `{runId}` | `{runId}` |
 | `upload.chunkedUploadThresholdBytes` | long | Payload size **below** this uses single-stream; **at or above** uses chunked | `52428800` (50 MiB) |
@@ -304,7 +304,7 @@ box:
   clientSecret: "your-client-secret"
   enterpriseId: "987654"
   parentFolderId: "123456789"
-  userId: ""   # optional
+  userId: ""   # optional; comma-separated for round-robin per upload
 upload:
   fileCount: 100
   concurrency: 32
@@ -333,7 +333,7 @@ Launched when: `box-upload-perf run` (no args) or `box-upload-perf wizard`.
 | Step | Title | Collects |
 |------|--------|----------|
 | 1 | **Start** | New setup / load existing profile / exit |
-| 2 | **Box credentials** | `clientId`, `clientSecret` (masked), `enterpriseId`, optional `userId` |
+| 2 | **Box credentials** | `clientId`, `clientSecret` (masked), `enterpriseId`, optional comma-separated `userId` |
 | 3 | **Box target** | `parentFolderId` |
 | 4 | **Workload** | `fileCount`, `pdf.targetSizeBytes` |
 | 5 | **Concurrency** | `threadMode`, `concurrency`, optional `platformThreadPoolSize` |

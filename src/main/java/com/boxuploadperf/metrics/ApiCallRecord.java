@@ -29,5 +29,7 @@ public record ApiCallRecord(
         /** Milliseconds slept before the next attempt after this response; null if no retry. */
         Long retrySleepMs,
         /** {@link com.boxuploadperf.http.RetryDelayPolicy.DelaySource} name when {@code retrySleepMs} is set. */
-        String retryDelaySource) {
+        String retryDelaySource,
+        /** Effective Box user for this call ({@code As-User} header); null for enterprise-only or auth. */
+        String asUserId) {
 }

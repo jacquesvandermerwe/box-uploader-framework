@@ -21,7 +21,8 @@ class ProfileStoreTest {
         c.profileDescription = "run1";
         c.boxClientId = "client-id";
         c.boxClientSecret = "secret";
-        c.boxUserId = "user-1";
+        c.boxEnterpriseId = "ent-1";
+        c.boxUserId = "3312464263";
         c.boxParentFolderId = "folder-1";
         c.uploadThreadMode = ThreadMode.VIRTUAL;
         c.uploadFileCount = 50;

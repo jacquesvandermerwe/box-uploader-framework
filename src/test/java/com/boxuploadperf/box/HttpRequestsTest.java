@@ -28,6 +28,30 @@ class HttpRequestsTest {
     }
 
     @Test
+    void appliesAsUserHeaderWhenProvided() {
+        HttpRequest template = HttpRequest.newBuilder(URI.create("https://api.box.com/2.0/files"))
+                .GET()
+                .build();
+
+        HttpRequest updated = HttpRequests.withAuth(template, "token", "12345");
+
+        assertEquals("Bearer token", updated.headers().firstValue("Authorization").orElseThrow());
+        assertEquals("12345", updated.headers().firstValue("As-User").orElseThrow());
+    }
+
+    @Test
+    void replacesStaleAsUserHeader() {
+        HttpRequest template = HttpRequest.newBuilder(URI.create("https://api.box.com/2.0/files"))
+                .header("As-User", "old")
+                .GET()
+                .build();
+
+        HttpRequest updated = HttpRequests.withAuth(template, "token", "new");
+
+        assertEquals("new", updated.headers().firstValue("As-User").orElseThrow());
+    }
+
+    @Test
     void preservesHttpVersionAndExpectContinue() {
         HttpRequest template = HttpRequest.newBuilder(URI.create("https://api.box.com/2.0/files"))
                 .version(HttpClient.Version.HTTP_1_1)

@@ -33,7 +33,7 @@ class MetricsDatabaseOutcomeTest {
                     config.runId, "guid-1", null, 3, ApiPhase.UPLOAD_SIMPLE, null, null, null,
                     "SINGLE_STREAM", false, true, java.time.Instant.now(), "POST", "https://upload.example/files",
                     0, new com.boxuploadperf.http.NetworkTiming(), "VIRTUAL", 1, false, null,
-                    "IOException: timeout", null, null));
+                    "IOException: timeout", null, null, null));
             db.recordFileUploadOutcome(FileUploadOutcome.failure(
                     config.runId, "guid-1", 3, "SINGLE_STREAM",
                     UploadFailureReason.NETWORK, "IOException: timeout", 0, 1, 12.5));

@@ -67,6 +67,12 @@ public final class BenchmarkRunner {
             UploadFailureReport.Summary failureSummary = null;
             try (BoxClient box = new BoxClient(config)) {
                 progress.phase("Authenticating (CCG)");
+                if (config.usesImpersonation() && config.impersonationUserIds().size() > 1) {
+                    progress.phase("Impersonation: round-robin across " + config.impersonationUserIds().size()
+                            + " users (As-User header)");
+                } else if (config.usesImpersonation()) {
+                    progress.phase("Impersonation: user " + config.impersonationUserIds().get(0) + " (As-User header)");
+                }
                 box.authenticate(db, config.runId, threadMode);
 
                 progress.phase("Creating run folder on Box");

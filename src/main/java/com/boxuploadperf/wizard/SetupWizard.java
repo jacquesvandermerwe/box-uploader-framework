@@ -47,7 +47,9 @@ public final class SetupWizard {
         config.boxClientSecret = askSecret("Box Client Secret: ", config.boxClientSecret);
         config.boxEnterpriseId = ask("Box Enterprise ID (required unless impersonating a user): ", config.boxEnterpriseId);
         config.boxParentFolderId = ask("Box Parent Folder ID (upload destination): ", config.boxParentFolderId);
-        config.boxUserId = ask("Impersonation User ID (optional; CCG acts as this user when set): ", config.boxUserId);
+        config.boxUserId = ask(
+                "Impersonation user ID(s) (optional; comma-separated for round-robin via As-User header): ",
+                config.boxUserId);
         String rate = ask("Upload rate limit (uploads/s, 0 = Box default 240/min): ",
                 config.uploadRateLimitPerSecond > 0
                         ? String.valueOf(config.uploadRateLimitPerSecond)

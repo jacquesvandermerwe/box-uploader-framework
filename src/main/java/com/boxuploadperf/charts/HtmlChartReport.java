@@ -69,7 +69,7 @@ public final class HtmlChartReport {
                             AppConfig.BOX_UPLOAD_RATE_LIMIT_PER_MINUTE, c.effectiveRateLimitPerSec()));
         }
         row(sb, "Enterprise ID", c.enterpriseId());
-        row(sb, "Impersonation user ID", c.impersonationUserId());
+        row(sb, "Impersonation user ID(s)", ReportFormat.formatImpersonationUsers(c.impersonationUserId()));
         row(sb, "Parent folder ID", c.boxParentFolderId());
         row(sb, "Run folder ID", c.boxRunFolderId());
         row(sb, "Upload zone host", c.uploadZoneHost());
