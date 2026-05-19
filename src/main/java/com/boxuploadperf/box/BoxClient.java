@@ -33,7 +33,8 @@ public final class BoxClient implements AutoCloseable {
     private static final String API_BASE = "https://api.box.com/2.0";
     private final AppConfig config;
     private final InstrumentedHttpClient http;
-    private String accessToken;
+    private final BoxAccessTokenHolder tokens = new BoxAccessTokenHolder();
+    private final Object tokenRefreshLock = new Object();
     private UploadZoneContext uploadZone = UploadZoneContext.globalDefault();
 
     public BoxClient(AppConfig config) {
@@ -42,25 +43,45 @@ public final class BoxClient implements AutoCloseable {
     }
 
     public void authenticate(MetricsDatabase db, String runId, String threadMode) throws Exception {
-        String body = buildTokenBody();
-        HttpRequest request = HttpRequest.newBuilder(TOKEN_URI)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
-        var result = sendWithRetry(db, runId, null, null, ApiPhase.AUTH_TOKEN, true, false,
-                request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
-        if (result.response().statusCode() != 200) {
-            throw new IOException("CCG auth failed: " + result.response().statusCode() + " "
-                    + new String(result.response().body()));
+        refreshAccessToken(db, runId, threadMode, true);
+    }
+
+    /** Obtains a new CCG access token and resets the proactive refresh schedule. */
+    private void refreshAccessToken(MetricsDatabase db, String runId, String threadMode) throws Exception {
+        refreshAccessToken(db, runId, threadMode, false);
+    }
+
+    private void refreshAccessToken(MetricsDatabase db, String runId, String threadMode, boolean force)
+            throws Exception {
+        synchronized (tokenRefreshLock) {
+            if (!force && !tokens.needsProactiveRefresh()) {
+                return;
+            }
+            String body = buildTokenBody();
+            HttpRequest request = HttpRequest.newBuilder(TOKEN_URI)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            var result = sendWithRetry(db, runId, null, null, ApiPhase.AUTH_TOKEN, true, false,
+                    request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
+            if (result.response().statusCode() != 200) {
+                throw new IOException("CCG auth failed: " + result.response().statusCode() + " "
+                        + new String(result.response().body()));
+            }
+            tokens.applyTokenResponse(new String(result.response().body()));
         }
-        accessToken = extractJsonField(new String(result.response().body()), "access_token");
+    }
+
+    private void ensureAccessToken(MetricsDatabase db, String runId, String threadMode) throws Exception {
+        if (tokens.needsProactiveRefresh()) {
+            refreshAccessToken(db, runId, threadMode, false);
+        }
     }
 
     public String createRunFolder(MetricsDatabase db, String runId, String threadMode) throws Exception {
         String json = "{\"name\":\"" + escapeJson(config.boxRunFolderName) + "\",\"parent\":{\"id\":\""
                 + config.boxParentFolderId + "\"}}";
         HttpRequest request = HttpRequest.newBuilder(URI.create(API_BASE + "/folders"))
-                .header("Authorization", "Bearer " + accessToken)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
@@ -78,7 +99,6 @@ public final class BoxClient implements AutoCloseable {
                 "{\"name\":\"%s\",\"size\":%d,\"parent\":{\"id\":\"%s\"}}",
                 escapeJson(UploadZoneResolver.PREFLIGHT_PROBE_NAME), payloadBytes, parentFolderId);
         HttpRequest request = HttpRequest.newBuilder(URI.create(API_BASE + "/files/content"))
-                .header("Authorization", "Bearer " + accessToken)
                 .header("Content-Type", "application/json")
                 .method("OPTIONS", HttpRequest.BodyPublishers.ofString(body))
                 .build();
@@ -124,7 +144,6 @@ public final class BoxClient implements AutoCloseable {
             byte[] body = buildMultipart(attributes, fileBytes, fileName, "application/pdf");
             timing.requestBytes = body.length;
             HttpRequest request = HttpRequest.newBuilder(URI.create(uploadZone.uploadBaseUrl() + "/files/content"))
-                    .header("Authorization", uploadAuthHeader())
                     .header("Content-Type", "multipart/form-data; boundary=boxperf")
                     .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                     .build();
@@ -173,7 +192,6 @@ public final class BoxClient implements AutoCloseable {
         byte[] body = buildMultipart(attributes, fileBytes, safeName, "application/pdf");
         timing.requestBytes = body.length;
         HttpRequest request = HttpRequest.newBuilder(URI.create(uploadZone.uploadBaseUrl() + "/files/content"))
-                .header("Authorization", uploadAuthHeader())
                 .header("Content-Type", "multipart/form-data; boundary=boxperf")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
@@ -195,7 +213,6 @@ public final class BoxClient implements AutoCloseable {
                 "{\"file_name\":\"%s\",\"file_size\":%d,\"parent\":{\"id\":\"%s\"}}",
                 escapeJson(fileName), fileBytes.length, parentFolderId);
         HttpRequest createSession = HttpRequest.newBuilder(URI.create(uploadZone.uploadBaseUrl() + "/files/upload_sessions"))
-                .header("Authorization", uploadAuthHeader())
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(sessionJson))
                 .build();
@@ -222,7 +239,6 @@ public final class BoxClient implements AutoCloseable {
             partSha1s.add(sha1);
 
             HttpRequest partReq = HttpRequest.newBuilder(URI.create(uploadPartUrl))
-                    .header("Authorization", uploadAuthHeader())
                     .header("Digest", "sha=" + sha1)
                     .header("Content-Type", "application/octet-stream")
                     .PUT(HttpRequest.BodyPublishers.ofByteArray(part))
@@ -248,7 +264,6 @@ public final class BoxClient implements AutoCloseable {
         shaArray.append(']');
         String commitJson = "{\"parts\":" + shaArray + "}";
         HttpRequest commitReq = HttpRequest.newBuilder(URI.create(commitUrl))
-                .header("Authorization", uploadAuthHeader())
                 .header("Content-Type", "application/json")
                 .header("Digest", "sha=" + sha1Hex(fileBytes))
                 .POST(HttpRequest.BodyPublishers.ofString(commitJson))
@@ -265,11 +280,12 @@ public final class BoxClient implements AutoCloseable {
         return new UploadResult(fileId, primaryMs, e2e, chunkIndex, ancillary, had429, chunkIndex);
     }
 
-    public void deleteFolder(String folderId) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(API_BASE + "/folders/" + folderId + "?recursive=true"))
-                .header("Authorization", "Bearer " + accessToken)
+    public void deleteFolder(MetricsDatabase db, String runId, String threadMode, String folderId) throws Exception {
+        ensureAccessToken(db, runId, threadMode);
+        HttpRequest template = HttpRequest.newBuilder(URI.create(API_BASE + "/folders/" + folderId + "?recursive=true"))
                 .DELETE()
                 .build();
+        HttpRequest req = HttpRequests.withBearerToken(template, tokens.accessToken());
         http.send(req, HttpResponse.BodyHandlers.discarding());
     }
 
@@ -278,13 +294,20 @@ public final class BoxClient implements AutoCloseable {
             ApiPhase phase, boolean ancillary, boolean primary,
             HttpRequest request, HttpResponse.BodyHandler<T> handler, String threadMode,
             Integer chunkIndex, Long chunkOffset, Integer chunkLength) throws Exception {
+        HttpRequest template = request;
+        boolean refreshedFor401 = false;
         InterruptedException interrupted = null;
         for (int attempt = 1; attempt <= config.retryMaxAttempts; attempt++) {
+            HttpRequest toSend = template;
+            if (phase != ApiPhase.AUTH_TOKEN) {
+                ensureAccessToken(db, runId, threadMode);
+                toSend = HttpRequests.withBearerToken(template, tokens.accessToken());
+            }
             InstrumentedHttpClient.HttpResult<T> result;
             int status;
             NetworkTiming timing;
             try {
-                result = http.send(request, handler);
+                result = http.send(toSend, handler);
                 status = result.response().statusCode();
                 timing = result.timing();
             } catch (Exception ex) {
@@ -292,7 +315,7 @@ public final class BoxClient implements AutoCloseable {
                     UploadAttemptTracker.recordHttpAttempt(0);
                 }
                 recordTransportFailure(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary,
-                        request, threadMode, attempt, chunkIndex, chunkOffset, chunkLength, ex);
+                        template, threadMode, attempt, chunkIndex, chunkOffset, chunkLength, ex);
                 throw ex;
             }
             if (uploadGuid != null) {
@@ -300,6 +323,24 @@ public final class BoxClient implements AutoCloseable {
             }
             RetryAfterParser.OptionalInt parsedRetry = RetryAfterParser.parseSeconds(result.response());
             Integer retryAfterSec = parsedRetry.isPresent() ? parsedRetry.getAsInt() : null;
+            if (status == 401 && phase != ApiPhase.AUTH_TOKEN) {
+                if (!refreshedFor401) {
+                    record(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary,
+                            template.method(), RequestUrlMetrics.fromUri(template.uri()),
+                            status, timing, threadMode, attempt, retryAfterSec,
+                            chunkIndex, chunkOffset, chunkLength, null, null);
+                    refreshedFor401 = true;
+                    refreshAccessToken(db, runId, threadMode, true);
+                    // Token refresh retry must not consume a retryMaxAttempts slot (e.g. when maxAttempts is 1).
+                    attempt--;
+                    continue;
+                }
+                record(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary,
+                        template.method(), RequestUrlMetrics.fromUri(template.uri()),
+                        status, timing, threadMode, attempt, retryAfterSec,
+                        chunkIndex, chunkOffset, chunkLength, null, null);
+                return result;
+            }
             boolean retryable = status == 429 || status >= 500;
             RetryDelayPolicy.Delay delay = retryable && attempt < config.retryMaxAttempts
                     ? RetryDelayPolicy.compute(status, retryAfterSec, attempt, config.retryBackoffMs)
@@ -307,7 +348,7 @@ public final class BoxClient implements AutoCloseable {
             Long sleepMs = delay != null && delay.sleepMs() > 0 ? delay.sleepMs() : null;
             String delaySource = delay != null && sleepMs != null ? delay.source().name() : null;
             record(db, runId, uploadGuid, uploadIndex, phase, ancillary, primary,
-                    request.method(), RequestUrlMetrics.fromUri(request.uri()),
+                    template.method(), RequestUrlMetrics.fromUri(template.uri()),
                     status, timing, threadMode, attempt, retryAfterSec,
                     chunkIndex, chunkOffset, chunkLength, sleepMs, delaySource);
             if (!retryable || attempt >= config.retryMaxAttempts) {
@@ -370,10 +411,6 @@ public final class BoxClient implements AutoCloseable {
                 ancillary, primary, Instant.now(), method, url, status, timing, threadMode, attempt,
                 status == 429, retryAfterSec, errorMessage,
                 retrySleepMs, retryDelaySource));
-    }
-
-    private String uploadAuthHeader() {
-        return "Bearer " + accessToken;
     }
 
     private String buildTokenBody() {

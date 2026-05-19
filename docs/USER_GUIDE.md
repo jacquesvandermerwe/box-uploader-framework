@@ -73,7 +73,7 @@ sequenceDiagram
 |-------|----------------|--------------------------------|
 | **Payload** | Build `work/payload.pdf` to `pdf.targetSizeBytes`, then hash it | No |
 | **Metrics DB** | Create/open `results/<runId>/metrics.db`, record run metadata | No |
-| **Auth** | Obtain Box CCG access token | No |
+| **Auth** | Obtain Box CCG access token (refreshed proactively during long runs; see below) | No |
 | **Folder** | Create a subfolder under `box.parentFolderId` for this run | No |
 | **Zone preflight** | `OPTIONS` preflight to discover regional upload host (zone-aware routing) | No |
 | **Upload phase** | Concurrent uploads with semaphore-limited concurrency | **Yes** |
@@ -94,6 +94,15 @@ If the process appears idle for a while, that is usually expected: most setup wo
 3. **SQLite initialization** — Schema and indexes on first write.
 4. **Box API setup** — CCG token, create folder, preflight (usually seconds, not minutes).
 5. **Resource sampler** — Network interface discovery when the upload phase starts (OSHI).
+
+### Long runs and token expiry
+
+Box CCG access tokens are typically valid for about **60 minutes**. For benchmarks that run longer than that (many files, heavy 429 backoff, or slow links), the harness **refreshes the token automatically**:
+
+- **Proactive refresh** — A new token is requested at roughly **90%** of the token lifetime (or at least **2 minutes** before expiry, whichever is sooner).
+- **Reactive refresh** — If Box returns **401 Unauthorized**, the harness obtains a new token and **retries that request once** before treating the call as failed.
+
+Token refresh is recorded in `api_calls` with phase `AUTH_TOKEN`. You do not need to restart the JVM for multi-hour runs.
 
 ### What you can do
 
