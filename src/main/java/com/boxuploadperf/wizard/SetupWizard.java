@@ -50,11 +50,23 @@ public final class SetupWizard {
         config.boxUserId = ask(
                 "Impersonation user ID(s) (optional; comma-separated for round-robin via As-User header): ",
                 config.boxUserId);
-        String rate = ask("Upload rate limit (uploads/s, 0 = Box default 240/min): ",
-                config.uploadRateLimitPerSecond > 0
-                        ? String.valueOf(config.uploadRateLimitPerSecond)
-                        : "0");
+        String rate = ask(
+                "Upload rate limit baseline (uploads/s; 0 = Box 240/min, <0 = no baseline in reports): ",
+                rateLimitDefault(config));
         config.uploadRateLimitPerSecond = Double.parseDouble(rate);
+        if (config.uploadRateLimitDisabled()) {
+            if (config.uploadEnforceRateLimit) {
+                System.out.println("Note: rate-limit enforcement disabled when baseline is < 0.");
+            }
+            config.uploadEnforceRateLimit = false;
+        } else {
+            double effective = config.effectiveUploadRateLimitPerSecond();
+            System.out.printf(Locale.US,
+                    "Effective limit for reports/enforcement: %.3f uploads/s%n", effective);
+            config.uploadEnforceRateLimit = askYesNo(
+                    "Enforce rate limit during uploads? (y = throttle starts, n = reports only): ",
+                    config.uploadEnforceRateLimit);
+        }
 
         config.uploadFileCount = Integer.parseInt(ask("Number of uploads: ", String.valueOf(config.uploadFileCount)));
         config.pdfTargetSizeBytes = Long.parseLong(ask("PDF size (bytes): ", String.valueOf(config.pdfTargetSizeBytes)));
@@ -89,6 +101,22 @@ public final class SetupWizard {
         boolean runBenchmark = action.toLowerCase(Locale.ROOT).startsWith("r")
                 || action.toLowerCase(Locale.ROOT).startsWith("b");
         return new WizardResult(config, runBenchmark && !saveOnly);
+    }
+
+    private static String rateLimitDefault(AppConfig config) {
+        if (config.uploadRateLimitDisabled()) {
+            return String.valueOf(config.uploadRateLimitPerSecond);
+        }
+        if (config.uploadRateLimitPerSecond > 0) {
+            return String.valueOf(config.uploadRateLimitPerSecond);
+        }
+        return "0";
+    }
+
+    private boolean askYesNo(String prompt, boolean defaultValue) {
+        String def = defaultValue ? "y" : "n";
+        String line = ask(prompt, def);
+        return line.toLowerCase(Locale.ROOT).startsWith("y");
     }
 
     private String ask(String prompt, String defaultValue) {

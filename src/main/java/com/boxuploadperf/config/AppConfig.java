@@ -183,6 +183,46 @@ public final class AppConfig {
         return runDirectory().resolve(reportPdfFileName);
     }
 
+    /** Shallow copy for display/redaction (does not mutate the source). */
+    public AppConfig copy() {
+        AppConfig n = new AppConfig();
+        n.profileName = profileName;
+        n.profileDescription = profileDescription;
+        n.boxClientId = boxClientId;
+        n.boxClientSecret = boxClientSecret;
+        n.boxEnterpriseId = boxEnterpriseId;
+        n.boxUserId = boxUserId;
+        n.impersonationUserIds = List.copyOf(impersonationUserIds);
+        n.boxParentFolderId = boxParentFolderId;
+        n.boxRunFolderName = boxRunFolderName;
+        n.uploadFileCount = uploadFileCount;
+        n.uploadConcurrency = uploadConcurrency;
+        n.uploadThreadMode = uploadThreadMode;
+        n.uploadPlatformThreadPoolSize = uploadPlatformThreadPoolSize;
+        n.uploadRateLimitPerSecond = uploadRateLimitPerSecond;
+        n.uploadEnforceRateLimit = uploadEnforceRateLimit;
+        n.uploadChunkedUploadThresholdBytes = uploadChunkedUploadThresholdBytes;
+        n.uploadChunkSizeBytes = uploadChunkSizeBytes;
+        n.retryMaxAttempts = retryMaxAttempts;
+        n.retryBackoffMs = retryBackoffMs;
+        n.workParentDirectory = workParentDirectory;
+        n.workPayloadFileName = workPayloadFileName;
+        n.workReusePayload = workReusePayload;
+        n.pdfTargetSizeBytes = pdfTargetSizeBytes;
+        n.cleanupDeleteBoxRunFolderAfterRun = cleanupDeleteBoxRunFolderAfterRun;
+        n.cleanupDeleteLocalPayloadAfterRun = cleanupDeleteLocalPayloadAfterRun;
+        n.reportGeneratePdf = reportGeneratePdf;
+        n.reportUploadPdfToBox = reportUploadPdfToBox;
+        n.reportPdfFileName = reportPdfFileName;
+        n.runId = runId;
+        n.runOutputDirectory = runOutputDirectory;
+        n.metricsSqliteFileName = metricsSqliteFileName;
+        n.metricsSampleIntervalMs = metricsSampleIntervalMs;
+        n.metricsNetworkInterfaceName = metricsNetworkInterfaceName;
+        n.profilesDirectory = profilesDirectory;
+        return n;
+    }
+
     public static void requireJava21() {
         int feature = Runtime.version().feature();
         if (feature < 21) {

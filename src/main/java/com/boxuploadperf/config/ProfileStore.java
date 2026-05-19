@@ -96,23 +96,7 @@ public final class ProfileStore {
     }
 
     private static AppConfig copyForDisplay(AppConfig c) {
-        AppConfig n = new AppConfig();
-        n.profileName = c.profileName;
-        n.profileDescription = c.profileDescription;
-        n.boxClientId = c.boxClientId;
-        n.boxClientSecret = c.boxClientSecret;
-        n.boxEnterpriseId = c.boxEnterpriseId;
-        n.boxUserId = c.boxUserId;
-        n.boxParentFolderId = c.boxParentFolderId;
-        n.runId = c.runId;
-        n.boxRunFolderName = c.boxRunFolderName;
-        n.uploadFileCount = c.uploadFileCount;
-        n.uploadConcurrency = c.uploadConcurrency;
-        n.uploadThreadMode = c.uploadThreadMode;
-        n.pdfTargetSizeBytes = c.pdfTargetSizeBytes;
-        n.uploadChunkedUploadThresholdBytes = c.uploadChunkedUploadThresholdBytes;
-        n.uploadChunkSizeBytes = c.uploadChunkSizeBytes;
-        return n;
+        return c.copy();
     }
 
     private static void setPrivateDirPermissions(Path dir) {
