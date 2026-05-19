@@ -207,7 +207,7 @@ public final class BenchmarkRunner {
 
                 if (config.cleanupDeleteBoxRunFolderAfterRun) {
                     progress.phase("Deleting Box run folder");
-                    box.deleteFolder(runFolderId);
+                    box.deleteFolder(db, config.runId, threadMode, runFolderId);
                 }
 
                 printSummary(config, routingJson, summary, reportPdf, failureSummary);
