@@ -24,10 +24,6 @@ final class ImpersonationRotator {
         return new ImpersonationRotator(userIds);
     }
 
-    boolean enabled() {
-        return !userIds.isEmpty();
-    }
-
     /** First configured user — used for setup calls (folder create, preflight, cleanup). */
     String setupUserId() {
         if (userIds.isEmpty()) {
