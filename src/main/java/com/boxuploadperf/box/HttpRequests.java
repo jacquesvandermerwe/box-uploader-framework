@@ -11,6 +11,8 @@ final class HttpRequests {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(template.uri())
                 .method(template.method(), template.bodyPublisher().orElse(HttpRequest.BodyPublishers.noBody()));
+        template.version().ifPresent(builder::version);
+        builder.expectContinue(template.expectContinue());
         template.headers().map().forEach((name, values) -> {
             if (!"Authorization".equalsIgnoreCase(name)) {
                 for (String value : values) {

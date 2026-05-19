@@ -43,28 +43,38 @@ public final class BoxClient implements AutoCloseable {
     }
 
     public void authenticate(MetricsDatabase db, String runId, String threadMode) throws Exception {
-        refreshAccessToken(db, runId, threadMode);
+        refreshAccessToken(db, runId, threadMode, true);
     }
 
     /** Obtains a new CCG access token and resets the proactive refresh schedule. */
     private void refreshAccessToken(MetricsDatabase db, String runId, String threadMode) throws Exception {
-        String body = buildTokenBody();
-        HttpRequest request = HttpRequest.newBuilder(TOKEN_URI)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
-        var result = sendWithRetry(db, runId, null, null, ApiPhase.AUTH_TOKEN, true, false,
-                request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
-        if (result.response().statusCode() != 200) {
-            throw new IOException("CCG auth failed: " + result.response().statusCode() + " "
-                    + new String(result.response().body()));
+        refreshAccessToken(db, runId, threadMode, false);
+    }
+
+    private void refreshAccessToken(MetricsDatabase db, String runId, String threadMode, boolean force)
+            throws Exception {
+        synchronized (tokenRefreshLock) {
+            if (!force && !tokens.needsProactiveRefresh()) {
+                return;
+            }
+            String body = buildTokenBody();
+            HttpRequest request = HttpRequest.newBuilder(TOKEN_URI)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            var result = sendWithRetry(db, runId, null, null, ApiPhase.AUTH_TOKEN, true, false,
+                    request, HttpResponse.BodyHandlers.ofByteArray(), threadMode, null, null, null);
+            if (result.response().statusCode() != 200) {
+                throw new IOException("CCG auth failed: " + result.response().statusCode() + " "
+                        + new String(result.response().body()));
+            }
+            tokens.applyTokenResponse(new String(result.response().body()));
         }
-        tokens.applyTokenResponse(new String(result.response().body()));
     }
 
     private void ensureAccessToken(MetricsDatabase db, String runId, String threadMode) throws Exception {
         if (tokens.needsProactiveRefresh()) {
-            refreshAccessToken(db, runId, threadMode);
+            refreshAccessToken(db, runId, threadMode, false);
         }
     }
 
@@ -320,7 +330,7 @@ public final class BoxClient implements AutoCloseable {
                             status, timing, threadMode, attempt, retryAfterSec,
                             chunkIndex, chunkOffset, chunkLength, null, null);
                     refreshedFor401 = true;
-                    refreshAccessToken(db, runId, threadMode);
+                    refreshAccessToken(db, runId, threadMode, true);
                     // Token refresh retry must not consume a retryMaxAttempts slot (e.g. when maxAttempts is 1).
                     attempt--;
                     continue;
