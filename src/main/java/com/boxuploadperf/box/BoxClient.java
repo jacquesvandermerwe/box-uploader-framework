@@ -34,6 +34,7 @@ public final class BoxClient implements AutoCloseable {
     private final AppConfig config;
     private final InstrumentedHttpClient http;
     private final BoxAccessTokenHolder tokens = new BoxAccessTokenHolder();
+    private final Object tokenRefreshLock = new Object();
     private UploadZoneContext uploadZone = UploadZoneContext.globalDefault();
 
     public BoxClient(AppConfig config) {
