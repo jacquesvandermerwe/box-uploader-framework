@@ -9,8 +9,10 @@ box:
   enterpriseId: "39176179"
   # Folder where each run creates a subfolder and uploads files.
   parentFolderId: "382456701600"
-  # When set, CCG uses user impersonation (box_subject_type=user). Leave "" for enterprise-as-app.
+  # Comma-separated Box user IDs for As-User impersonation (enterprise token). Leave "" for service-account-only.
+  # Single ID: every upload uses that user. Multiple IDs: round-robin per file upload.
   userId: "3312464263"
+  # Example multi-user: userId: "3312464263,3312464264,3312464265"
 upload:
   fileCount: 10
   concurrency: 4

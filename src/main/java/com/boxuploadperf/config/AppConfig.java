@@ -1,6 +1,9 @@
 package com.boxuploadperf.config;
 
+import com.boxuploadperf.box.ImpersonationUsers;
+
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 public final class AppConfig {
@@ -19,8 +22,10 @@ public final class AppConfig {
     public String boxClientId;
     public String boxClientSecret;
     public String boxEnterpriseId;
+    /** Comma-separated Box user IDs for {@code As-User} impersonation; empty for enterprise-only mode. */
     public String boxUserId;
     public String boxParentFolderId;
+    private List<String> impersonationUserIds = List.of();
     public String boxRunFolderName;
 
     public int uploadFileCount = 100;
@@ -75,8 +80,12 @@ public final class AppConfig {
         if (isBlank(boxClientId) || isBlank(boxClientSecret)) {
             throw new IllegalArgumentException("box.clientId and box.clientSecret are required (profile or wizard)");
         }
-        boolean impersonating = !isBlank(boxUserId);
-        if (!impersonating && isBlank(boxEnterpriseId)) {
+        impersonationUserIds = ImpersonationUsers.parse(boxUserId);
+        if (usesImpersonation() && isBlank(boxEnterpriseId)) {
+            throw new IllegalArgumentException(
+                    "box.enterpriseId is required when box.userId is set (enterprise token + As-User header)");
+        }
+        if (!usesImpersonation() && isBlank(boxEnterpriseId)) {
             throw new IllegalArgumentException(
                     "box.enterpriseId is required when box.userId is not set (enterprise CCG)");
         }
@@ -116,6 +125,14 @@ public final class AppConfig {
             throw new IllegalArgumentException(
                     "upload.enforceRateLimit cannot be used with rateLimitPerSecond < 0");
         }
+    }
+
+    public boolean usesImpersonation() {
+        return !impersonationUserIds.isEmpty();
+    }
+
+    public List<String> impersonationUserIds() {
+        return impersonationUserIds;
     }
 
     public boolean shouldEnforceRateLimit() {

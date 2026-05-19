@@ -3,7 +3,7 @@
 These YAML files are **templates only** (placeholder credentials). They are safe to commit.
 
 1. Copy a file to `~/.box-upload-perf/profiles/<name>.yaml`
-2. Replace `clientId`, `clientSecret`, `enterpriseId`, and `parentFolderId`
+2. Replace `clientId`, `clientSecret`, `enterpriseId`, and `parentFolderId`. For user impersonation, set `userId` to one ID or comma-separated IDs (round-robin per upload; see `docs/USER_GUIDE.md`).
 3. Run: `java -jar target/box-upload-perf-1.0.0-SNAPSHOT.jar run --profile <name>`
 
 | File | Highlights |

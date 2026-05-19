@@ -302,7 +302,7 @@ public final class PdfChartReport {
                 row("Upload strategy", c.uploadStrategy()),
                 row("Rate limit", report.rateLimitDescription()),
                 row("Enterprise ID", c.enterpriseId()),
-                row("Impersonation user ID", c.impersonationUserId()),
+                row("Impersonation user ID(s)", ReportFormat.formatImpersonationUsers(c.impersonationUserId())),
                 row("Parent folder ID", c.boxParentFolderId()),
                 row("Run folder ID", c.boxRunFolderId()),
                 row("Upload zone host", c.uploadZoneHost()),

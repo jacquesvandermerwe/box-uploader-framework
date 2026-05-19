@@ -50,7 +50,7 @@ Full steps (Gatekeeper, PATH alias, profiles, results directory, uninstall): [In
 java -jar target/box-upload-perf-1.0.0-SNAPSHOT.jar run
 ```
 
-Enter Box CCG credentials, **enterprise ID**, **parent folder ID**, optional **impersonation user ID**, and workload settings. Save a named profile for repeat runs.
+Enter Box CCG credentials, **enterprise ID**, **parent folder ID**, optional **impersonation user ID(s)** (comma-separated for round-robin via `As-User`), and workload settings. Save a named profile for repeat runs.
 
 ### Repeatable profile
 

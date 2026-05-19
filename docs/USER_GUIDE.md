@@ -95,6 +95,28 @@ If the process appears idle for a while, that is usually expected: most setup wo
 4. **Box API setup** — CCG token, create folder, preflight (usually seconds, not minutes).
 5. **Resource sampler** — Network interface discovery when the upload phase starts (OSHI).
 
+### User impersonation (`box.userId`)
+
+The harness obtains a single **enterprise** CCG access token and impersonates users with the Box **`As-User`** request header (not separate tokens per user).
+
+| `userId` value | Behavior |
+|----------------|----------|
+| Empty | API calls run as the enterprise service account (no `As-User`). |
+| One numeric ID | Every upload and setup call uses that user. |
+| Comma-separated IDs | **Round-robin per file upload**: upload 0 → first ID, upload 1 → second ID, etc., wrapping at the end. All HTTP calls for one file (including chunked session, parts, commit) share the same user. Folder create, preflight, report upload, and folder delete use the **first** ID in the list. |
+
+**Requirements:** Your Box app must be authorized to act on behalf of users. Each listed user needs access to `box.parentFolderId`. `box.enterpriseId` is **required** whenever `userId` is set.
+
+**Metrics:** Each row in `api_calls` includes `as_user_id` when impersonation is active (null for the token request and enterprise-only runs).
+
+**Example profile:**
+
+```yaml
+box:
+  enterpriseId: "39176179"
+  userId: "3312464263,3312464264,3312464265"
+```
+
 ### Long runs and token expiry
 
 Box CCG access tokens are typically valid for about **60 minutes**. For benchmarks that run longer than that (many files, heavy 429 backoff, or slow links), the harness **refreshes the token automatically**:
@@ -200,7 +222,7 @@ Create one by copying an example from [config/examples/](../config/examples/), c
 | Scenario | Required `box` fields |
 |----------|------------------------|
 | Enterprise CCG (app acts as enterprise) | `clientId`, `clientSecret`, `enterpriseId`, `parentFolderId` |
-| User impersonation | `clientId`, `clientSecret`, `userId`, `parentFolderId` (`enterpriseId` optional but recommended) |
+| User impersonation (one or more users) | `clientId`, `clientSecret`, `enterpriseId`, `userId`, `parentFolderId` |
 
 Credentials are read **only** from the profile or wizard — not from environment variables.
 
@@ -223,8 +245,8 @@ Every key the loader understands, with defaults when omitted.
 |-----|------|---------|-------------|
 | `clientId` | string | — | Box CCG client ID. **Required.** |
 | `clientSecret` | string | — | Box CCG client secret. **Required.** |
-| `enterpriseId` | string | — | Enterprise numeric ID. **Required** unless `userId` is set. |
-| `userId` | string | — | When set, CCG impersonates this user (`box_subject_type=user`). |
+| `enterpriseId` | string | — | Enterprise numeric ID. **Required** for all runs (used for the CCG token). |
+| `userId` | string | — | Optional. One or more Box user IDs, **comma-separated**. When set, the harness uses an **enterprise token** and sends the **`As-User`** header on each API call. A single ID uses that user for every upload. Multiple IDs rotate **round-robin per file upload** (all HTTP calls for one file, including chunks, use the same user). Setup operations (folder create, preflight, report upload, folder delete) use the **first** ID in the list. Leave empty for enterprise service-account mode (no `As-User`). |
 | `parentFolderId` | string | — | Folder where each run creates a subfolder and uploads files. **Required.** |
 | `runFolderName` | string | `<runId>` | Name of the Box subfolder for this run. Defaults to the run UUID if omitted. |
 

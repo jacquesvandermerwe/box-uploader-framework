@@ -67,7 +67,8 @@ class ConfigLoaderTest {
         AppConfig c = new AppConfig();
         c.boxClientId = "id";
         c.boxClientSecret = "secret";
-        c.boxUserId = "user";
+        c.boxEnterpriseId = "ent";
+        c.boxUserId = "3312464263";
         c.boxParentFolderId = "folder";
         c.runId = "run-abc";
         c.boxRunFolderName = null;
@@ -81,13 +82,41 @@ class ConfigLoaderTest {
         AppConfig c = new AppConfig();
         c.boxClientId = "id";
         c.boxClientSecret = "secret";
-        c.boxUserId = "user";
+        c.boxEnterpriseId = "ent";
+        c.boxUserId = "3312464263";
         c.boxParentFolderId = "folder";
         c.runId = "new-run-id";
         c.boxRunFolderName = "old-saved-folder-id";
         c.uploadThreadMode = ThreadMode.VIRTUAL;
         c.validate();
         assertEquals("new-run-id", c.boxRunFolderName);
+    }
+
+    @Test
+    void parsesCommaSeparatedUserIds() {
+        AppConfig c = ConfigLoader.fromMap(Map.of(
+                "box", Map.of(
+                        "clientId", "id",
+                        "clientSecret", "secret",
+                        "enterpriseId", "ent",
+                        "userId", "111, 222, 333",
+                        "parentFolderId", "folder"),
+                "upload", Map.of("threadMode", "VIRTUAL"),
+                "pdf", Map.of("targetSizeBytes", 1024)));
+        c.validate();
+        assertEquals(java.util.List.of("111", "222", "333"), c.impersonationUserIds());
+        assertTrue(c.usesImpersonation());
+    }
+
+    @Test
+    void impersonationRequiresEnterpriseId() {
+        AppConfig c = new AppConfig();
+        c.boxClientId = "id";
+        c.boxClientSecret = "secret";
+        c.boxUserId = "123";
+        c.boxParentFolderId = "folder";
+        c.uploadThreadMode = ThreadMode.VIRTUAL;
+        assertThrows(IllegalArgumentException.class, c::validate);
     }
 
     @Test
