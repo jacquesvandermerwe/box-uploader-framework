@@ -50,10 +50,10 @@ public final class SetupWizard {
         config.boxUserId = ask(
                 "Impersonation user ID(s) (optional; comma-separated for round-robin via As-User header): ",
                 config.boxUserId);
-        String rate = ask(
+        double defaultRate = Double.parseDouble(rateLimitDefault(config));
+        config.uploadRateLimitPerSecond = askDouble(
                 "Upload rate limit baseline (uploads/s; 0 = Box 240/min, <0 = no baseline in reports): ",
-                rateLimitDefault(config));
-        config.uploadRateLimitPerSecond = Double.parseDouble(rate);
+                defaultRate);
         if (config.uploadRateLimitDisabled()) {
             if (config.uploadEnforceRateLimit) {
                 System.out.println("Note: rate-limit enforcement disabled when baseline is < 0.");
@@ -68,15 +68,23 @@ public final class SetupWizard {
                     config.uploadEnforceRateLimit);
         }
 
-        config.uploadFileCount = Integer.parseInt(ask("Number of uploads: ", String.valueOf(config.uploadFileCount)));
-        config.pdfTargetSizeBytes = Long.parseLong(ask("PDF size (bytes): ", String.valueOf(config.pdfTargetSizeBytes)));
-        config.uploadThreadMode = ThreadMode.parse(ask("Thread mode VIRTUAL or PLATFORM: ", 
-                config.uploadThreadMode != null ? config.uploadThreadMode.name() : "VIRTUAL"));
-        config.uploadConcurrency = Integer.parseInt(ask("Concurrency: ", String.valueOf(config.uploadConcurrency)));
-        config.uploadChunkedUploadThresholdBytes = Long.parseLong(ask("Chunked threshold (bytes): ",
-                String.valueOf(config.uploadChunkedUploadThresholdBytes)));
-        config.uploadChunkSizeBytes = Long.parseLong(ask("Chunk size (bytes): ",
-                String.valueOf(config.uploadChunkSizeBytes)));
+        config.uploadFileCount = askInt("Number of uploads: ", config.uploadFileCount);
+        config.pdfTargetSizeBytes = askLong("PDF size (bytes): ", config.pdfTargetSizeBytes);
+        while (true) {
+            String tmDefault = config.uploadThreadMode != null ? config.uploadThreadMode.name() : "VIRTUAL";
+            String ans = ask("Thread mode VIRTUAL or PLATFORM: ", tmDefault);
+            try {
+                config.uploadThreadMode = ThreadMode.parse(ans);
+                break;
+            } catch (IllegalArgumentException e) {
+                System.out.println("Invalid thread mode. Must be VIRTUAL or PLATFORM.");
+            }
+        }
+        config.uploadConcurrency = askInt("Concurrency: ", config.uploadConcurrency);
+        config.uploadChunkedUploadThresholdBytes = askLong("Chunked threshold (bytes): ",
+                config.uploadChunkedUploadThresholdBytes);
+        config.uploadChunkSizeBytes = askLong("Chunk size (bytes): ",
+                config.uploadChunkSizeBytes);
 
         config.assignFreshRunIdentity();
 
@@ -101,6 +109,39 @@ public final class SetupWizard {
         boolean runBenchmark = action.toLowerCase(Locale.ROOT).startsWith("r")
                 || action.toLowerCase(Locale.ROOT).startsWith("b");
         return new WizardResult(config, runBenchmark && !saveOnly);
+    }
+
+    private double askDouble(String prompt, double defaultValue) {
+        while (true) {
+            String ans = ask(prompt, String.valueOf(defaultValue));
+            try {
+                return Double.parseDouble(ans);
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid numeric value. Please enter a valid decimal number.");
+            }
+        }
+    }
+
+    private int askInt(String prompt, int defaultValue) {
+        while (true) {
+            String ans = ask(prompt, String.valueOf(defaultValue));
+            try {
+                return Integer.parseInt(ans);
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid integer. Please enter a valid whole number.");
+            }
+        }
+    }
+
+    private long askLong(String prompt, long defaultValue) {
+        while (true) {
+            String ans = ask(prompt, String.valueOf(defaultValue));
+            try {
+                return Long.parseLong(ans);
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid long value. Please enter a valid whole number.");
+            }
+        }
     }
 
     private static String rateLimitDefault(AppConfig config) {

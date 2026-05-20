@@ -16,6 +16,7 @@ public final class AppConfig {
     public static final double BOX_DEFAULT_UPLOAD_RATE_LIMIT_PER_SECOND =
             BOX_UPLOAD_RATE_LIMIT_PER_MINUTE / 60.0;
 
+    // NOTE: When adding any new public configuration fields here, make sure to update the copy() method below!
     public String profileName;
     public String profileDescription;
 
@@ -183,7 +184,10 @@ public final class AppConfig {
         return runDirectory().resolve(reportPdfFileName);
     }
 
-    /** Shallow copy for display/redaction (does not mutate the source). */
+    /** 
+     * Shallow copy for display/redaction (does not mutate the source).
+     * WARNING: If you add new fields to this class, you MUST manually update this copy() method to copy them!
+     */
     public AppConfig copy() {
         AppConfig n = new AppConfig();
         n.profileName = profileName;
