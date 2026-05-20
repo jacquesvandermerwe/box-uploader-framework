@@ -45,4 +45,16 @@ class ProfileStoreTest {
         assertEquals(50, loaded.uploadFileCount);
         assertEquals(4.0, loaded.uploadRateLimitPerSecond, 0.001);
     }
+
+    @Test
+    void redactedYamlIncludesRateLimitSettings() {
+        AppConfig c = new AppConfig();
+        c.uploadRateLimitPerSecond = 2.0;
+        c.uploadEnforceRateLimit = true;
+
+        String yaml = new ProfileStore(profilesDir).redactedYaml(c);
+
+        assertTrue(yaml.contains("rateLimitPerSecond: 2.0"));
+        assertTrue(yaml.contains("enforceRateLimit: true"));
+    }
 }

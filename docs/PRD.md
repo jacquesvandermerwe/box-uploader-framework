@@ -122,7 +122,7 @@ Today, ad-hoc scripts and SDK-based clients produce inconsistent metrics, hide p
 
 **Instrumentation approach (v1, no OkHttp):**
 
-`HttpClient` does not expose DNS/TCP/TLS callbacks directly. v1 implements a thin **`NetworkTimingContext`** (ThreadLocal or request-scoped) populated by:
+`HttpClient` does not expose DNS/TCP/TLS callbacks directly. v1 originally implemented a thin **`NetworkTimingContext`** (ThreadLocal or request-scoped, later consolidated/removed to simplify the call path) populated by:
 
 1. **DNS** — Before opening a new connection to a host, time `InetAddress.getAllByName(host)` (or cache per-host DNS time for the first resolution in a run).
 2. **TCP** — Custom `SocketFactory` / `SocketImpl` or `SocketChannel` connect wrapper that records connect start/end.
@@ -700,7 +700,7 @@ One row per HTTP request (including retries).
 | `connection_reused` | INTEGER | `1` if pooled connection reused (DNS/TCP/TLS = 0) |
 | `total_network_ms` | REAL | Sum of phases; sanity check vs `duration_ms` |
 
-*All network columns are **mandatory for v1**. Implementation: §4.3 (`NetworkTimingContext` + socket/SSL wrappers). Monotonic clock: `System.nanoTime()`.*
+*All network columns are **mandatory for v1**. Implementation: §4.3 (originally used `NetworkTimingContext` + socket/SSL wrappers, later consolidated). Monotonic clock: `System.nanoTime()`.*
 
 ### 11.3 Table: `file_uploads`
 
@@ -1008,7 +1008,7 @@ After config is resolved (profile, file, or wizard):
 | **chunkSizeBytes** | Byte size of each uploaded part (default 50 MiB) |
 | **Payload PDF** | Single local file reused for every upload in a run |
 | **connection_reused** | `1` when a pooled connection is reused; DNS/TCP/TLS = 0 for that call |
-| **NetworkTimingContext** | Request-scoped holder for DNS, TCP, TLS, TTFB, and transfer timings |
+| **NetworkTimingContext** | Request-scoped holder for timing (Consolidated in later revisions to simplify timing flow) |
 | **Application upload Mbps** | Upload bytes sent by the harness in a time window |
 | **Host NIC Mbps** | All traffic on a network interface (not Box-only) |
 | **resource_samples** | Time-series table for CPU and bandwidth during a run |

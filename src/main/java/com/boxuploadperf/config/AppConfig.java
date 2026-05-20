@@ -16,6 +16,7 @@ public final class AppConfig {
     public static final double BOX_DEFAULT_UPLOAD_RATE_LIMIT_PER_SECOND =
             BOX_UPLOAD_RATE_LIMIT_PER_MINUTE / 60.0;
 
+    // NOTE: When adding any new public configuration fields here, make sure to update the copy() method below!
     public String profileName;
     public String profileDescription;
 
@@ -181,6 +182,49 @@ public final class AppConfig {
 
     public Path reportPdfPath() {
         return runDirectory().resolve(reportPdfFileName);
+    }
+
+    /** 
+     * Shallow copy for display/redaction (does not mutate the source).
+     * WARNING: If you add new fields to this class, you MUST manually update this copy() method to copy them!
+     */
+    public AppConfig copy() {
+        AppConfig n = new AppConfig();
+        n.profileName = profileName;
+        n.profileDescription = profileDescription;
+        n.boxClientId = boxClientId;
+        n.boxClientSecret = boxClientSecret;
+        n.boxEnterpriseId = boxEnterpriseId;
+        n.boxUserId = boxUserId;
+        n.impersonationUserIds = List.copyOf(impersonationUserIds);
+        n.boxParentFolderId = boxParentFolderId;
+        n.boxRunFolderName = boxRunFolderName;
+        n.uploadFileCount = uploadFileCount;
+        n.uploadConcurrency = uploadConcurrency;
+        n.uploadThreadMode = uploadThreadMode;
+        n.uploadPlatformThreadPoolSize = uploadPlatformThreadPoolSize;
+        n.uploadRateLimitPerSecond = uploadRateLimitPerSecond;
+        n.uploadEnforceRateLimit = uploadEnforceRateLimit;
+        n.uploadChunkedUploadThresholdBytes = uploadChunkedUploadThresholdBytes;
+        n.uploadChunkSizeBytes = uploadChunkSizeBytes;
+        n.retryMaxAttempts = retryMaxAttempts;
+        n.retryBackoffMs = retryBackoffMs;
+        n.workParentDirectory = workParentDirectory;
+        n.workPayloadFileName = workPayloadFileName;
+        n.workReusePayload = workReusePayload;
+        n.pdfTargetSizeBytes = pdfTargetSizeBytes;
+        n.cleanupDeleteBoxRunFolderAfterRun = cleanupDeleteBoxRunFolderAfterRun;
+        n.cleanupDeleteLocalPayloadAfterRun = cleanupDeleteLocalPayloadAfterRun;
+        n.reportGeneratePdf = reportGeneratePdf;
+        n.reportUploadPdfToBox = reportUploadPdfToBox;
+        n.reportPdfFileName = reportPdfFileName;
+        n.runId = runId;
+        n.runOutputDirectory = runOutputDirectory;
+        n.metricsSqliteFileName = metricsSqliteFileName;
+        n.metricsSampleIntervalMs = metricsSampleIntervalMs;
+        n.metricsNetworkInterfaceName = metricsNetworkInterfaceName;
+        n.profilesDirectory = profilesDirectory;
+        return n;
     }
 
     public static void requireJava21() {

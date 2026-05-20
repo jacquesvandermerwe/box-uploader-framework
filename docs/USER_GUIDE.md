@@ -89,7 +89,7 @@ If the process appears idle for a while, that is usually expected: most setup wo
 
 ### Typical contributors (largest first)
 
-1. **PDF generation** — The harness builds a multi-page PDF until it reaches `pdf.targetSizeBytes`. The generator estimates size by serializing the whole document after each page, which is slow for ~1 MiB payloads and scales poorly for larger targets.
+1. **PDF generation** — The harness builds a valid minimal PDF and pads/truncates it to `pdf.targetSizeBytes` (fast vs per-page growth).
 2. **Payload hashing** — Full-file SHA-256 read after generation.
 3. **SQLite initialization** — Schema and indexes on first write.
 4. **Box API setup** — CCG token, create folder, preflight (usually seconds, not minutes).

@@ -126,4 +126,49 @@ class ConfigLoaderTest {
         Map<String, Object> box = (Map<String, Object>) ConfigLoader.toMap(c).get("box");
         assertTrue(!box.containsKey("runFolderName"));
     }
+
+    @Test
+    void copyCopiesAllFields() throws Exception {
+        AppConfig c1 = new AppConfig();
+        for (java.lang.reflect.Field field : AppConfig.class.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+            field.setAccessible(true);
+            Class<?> type = field.getType();
+            if (type == String.class) {
+                field.set(c1, "test-" + field.getName());
+            } else if (type == int.class) {
+                field.set(c1, 42);
+            } else if (type == long.class) {
+                field.set(c1, 100L);
+            } else if (type == double.class) {
+                field.set(c1, 3.14);
+            } else if (type == boolean.class) {
+                field.set(c1, true);
+            } else if (type == Integer.class) {
+                field.set(c1, 24);
+            } else if (type == java.nio.file.Path.class) {
+                field.set(c1, java.nio.file.Path.of("test-path"));
+            } else if (type == ThreadMode.class) {
+                field.set(c1, ThreadMode.PLATFORM);
+            } else if (type == java.util.List.class) {
+                field.set(c1, java.util.List.of("user-1"));
+            } else {
+                throw new IllegalStateException("Unhandled field type: " + type + " for field: " + field.getName());
+            }
+        }
+
+        AppConfig c2 = c1.copy();
+
+        for (java.lang.reflect.Field field : AppConfig.class.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+            field.setAccessible(true);
+            Object v1 = field.get(c1);
+            Object v2 = field.get(c2);
+            assertEquals(v1, v2, "Field " + field.getName() + " was not correctly copied!");
+        }
+    }
 }

@@ -7,7 +7,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
-import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * Parses Box {@code Retry-After} on 429 responses (seconds per
@@ -23,7 +23,6 @@ public final class RetryAfterParser {
     public static OptionalInt parseSeconds(HttpResponse<?> response) {
         return response.headers().firstValue("retry-after")
                 .map(RetryAfterParser::parseHeaderValue)
-                .filter(OptionalInt::isPresent)
                 .orElse(OptionalInt.empty());
     }
 
@@ -50,36 +49,6 @@ public final class RetryAfterParser {
             return OptionalInt.of((int) Math.min(sec, Integer.MAX_VALUE));
         } catch (DateTimeParseException e) {
             return OptionalInt.empty();
-        }
-    }
-
-    /** Simple optional int without depending on java.util.OptionalInt in older patterns. */
-    public static final class OptionalInt {
-        private final int value;
-        private final boolean present;
-
-        private OptionalInt(int value, boolean present) {
-            this.value = value;
-            this.present = present;
-        }
-
-        public static OptionalInt empty() {
-            return new OptionalInt(0, false);
-        }
-
-        public static OptionalInt of(int value) {
-            return new OptionalInt(value, true);
-        }
-
-        public boolean isPresent() {
-            return present;
-        }
-
-        public int getAsInt() {
-            if (!present) {
-                throw new IllegalStateException("empty");
-            }
-            return value;
         }
     }
 }

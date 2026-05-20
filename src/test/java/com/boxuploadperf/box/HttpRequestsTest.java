@@ -19,7 +19,7 @@ class HttpRequestsTest {
                 .GET()
                 .build();
 
-        HttpRequest updated = HttpRequests.withBearerToken(template, "fresh");
+        HttpRequest updated = HttpRequests.withAuth(template, "fresh", null);
 
         assertEquals("Bearer fresh", updated.headers().firstValue("Authorization").orElseThrow());
         assertEquals("application/json", updated.headers().firstValue("Content-Type").orElseThrow());
@@ -59,7 +59,7 @@ class HttpRequestsTest {
                 .GET()
                 .build();
 
-        HttpRequest updated = HttpRequests.withBearerToken(template, "fresh");
+        HttpRequest updated = HttpRequests.withAuth(template, "fresh", null);
 
         assertTrue(updated.version().isPresent());
         assertEquals(HttpClient.Version.HTTP_1_1, updated.version().get());

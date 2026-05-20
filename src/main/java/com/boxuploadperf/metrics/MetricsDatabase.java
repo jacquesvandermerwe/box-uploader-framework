@@ -427,22 +427,7 @@ public final class MetricsDatabase implements AutoCloseable {
         }
     }
 
-    /** @deprecated use {@link #recordFileUploadOutcome(FileUploadOutcome)} */
-    @Deprecated
-    public void insertFileUpload(String runId, String uploadGuid, int uploadIndex, String boxFileId,
-                                 String strategy, int chunkCount, boolean success,
-                                 double uploadDurationMs, double e2eMs, int ancillaryCount, boolean had429)
-            throws SQLException {
-        if (success) {
-            recordFileUploadOutcome(FileUploadOutcome.success(
-                    runId, uploadGuid, uploadIndex, boxFileId, strategy, chunkCount,
-                    uploadDurationMs, e2eMs, ancillaryCount, had429, 0));
-        } else {
-            recordFileUploadOutcome(FileUploadOutcome.failure(
-                    runId, uploadGuid, uploadIndex, strategy, UploadFailureReason.UNKNOWN,
-                    null, 0, 0, e2eMs));
-        }
-    }
+
 
     public void insertResourceSample(String runId, double elapsedMs, double cpuProcess, Double cpuSystem,
                                      long nicIn, long nicOut, double nicRxMbps, double nicTxMbps,

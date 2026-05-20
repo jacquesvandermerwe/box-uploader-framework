@@ -241,15 +241,13 @@ public final class BoxClient implements AutoCloseable {
         int chunkIndex = 0;
         for (long offset = 0; offset < fileBytes.length; offset += chunkSize, chunkIndex++) {
             int len = (int) Math.min(chunkSize, (long) fileBytes.length - offset);
-            byte[] part = new byte[len];
-            System.arraycopy(fileBytes, (int) offset, part, 0, len);
-            String sha1 = sha1Hex(part);
+            String sha1 = sha1Hex(fileBytes, (int) offset, len);
             partSha1s.add(sha1);
 
             HttpRequest partReq = HttpRequest.newBuilder(URI.create(uploadPartUrl))
                     .header("Digest", "sha=" + sha1)
                     .header("Content-Type", "application/octet-stream")
-                    .PUT(HttpRequest.BodyPublishers.ofByteArray(part))
+                    .PUT(HttpRequest.BodyPublishers.ofByteArray(fileBytes, (int) offset, len))
                     .build();
             long partStart = System.nanoTime();
             var partResult = sendWithRetry(db, runId, uploadGuid, uploadIndex, ApiPhase.UPLOAD_PART, false, true,
@@ -329,7 +327,7 @@ public final class BoxClient implements AutoCloseable {
             if (uploadGuid != null) {
                 UploadAttemptTracker.recordHttpAttempt(status);
             }
-            RetryAfterParser.OptionalInt parsedRetry = RetryAfterParser.parseSeconds(result.response());
+            java.util.OptionalInt parsedRetry = RetryAfterParser.parseSeconds(result.response());
             Integer retryAfterSec = parsedRetry.isPresent() ? parsedRetry.getAsInt() : null;
             if (status == 401 && phase != ApiPhase.AUTH_TOKEN) {
                 if (!refreshedFor401) {
@@ -436,10 +434,6 @@ public final class BoxClient implements AutoCloseable {
         return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
 
-    private static byte[] buildMultipart(String attributes, byte[] fileBytes, String fileName) {
-        return buildMultipart(attributes, fileBytes, fileName, "application/pdf");
-    }
-
     private static byte[] buildMultipart(String attributes, byte[] fileBytes, String fileName, String contentType) {
         String boundary = "boxperf";
         String header = "--" + boundary + "\r\n"
@@ -458,9 +452,24 @@ public final class BoxClient implements AutoCloseable {
         return out;
     }
 
-    private static String sha1Hex(byte[] data) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("SHA-1");
+    private static final ThreadLocal<MessageDigest> SHA1_DIGEST =
+        ThreadLocal.withInitial(() -> {
+            try {
+                return MessageDigest.getInstance("SHA-1");
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-1 algorithm not available", e);
+            }
+        });
+
+    static String sha1Hex(byte[] data) {
+        MessageDigest md = SHA1_DIGEST.get();
         return HexFormat.of().formatHex(md.digest(data));
+    }
+
+    static String sha1Hex(byte[] data, int offset, int len) {
+        MessageDigest md = SHA1_DIGEST.get();
+        md.update(data, offset, len);
+        return HexFormat.of().formatHex(md.digest());
     }
 
     private static String escapeJson(String s) {
