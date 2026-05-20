@@ -452,13 +452,22 @@ public final class BoxClient implements AutoCloseable {
         return out;
     }
 
-    static String sha1Hex(byte[] data) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("SHA-1");
+    private static final ThreadLocal<MessageDigest> SHA1_DIGEST =
+        ThreadLocal.withInitial(() -> {
+            try {
+                return MessageDigest.getInstance("SHA-1");
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-1 algorithm not available", e);
+            }
+        });
+
+    static String sha1Hex(byte[] data) {
+        MessageDigest md = SHA1_DIGEST.get();
         return HexFormat.of().formatHex(md.digest(data));
     }
 
-    static String sha1Hex(byte[] data, int offset, int len) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("SHA-1");
+    static String sha1Hex(byte[] data, int offset, int len) {
+        MessageDigest md = SHA1_DIGEST.get();
         md.update(data, offset, len);
         return HexFormat.of().formatHex(md.digest());
     }
