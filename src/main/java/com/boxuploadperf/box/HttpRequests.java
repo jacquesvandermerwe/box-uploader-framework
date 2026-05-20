@@ -7,10 +7,6 @@ final class HttpRequests {
 
     private HttpRequests() {}
 
-    static HttpRequest withBearerToken(HttpRequest template, String accessToken) {
-        return withAuth(template, accessToken, null);
-    }
-
     static HttpRequest withAuth(HttpRequest template, String accessToken, String asUserId) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(template.uri())

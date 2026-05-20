@@ -21,7 +21,6 @@ public final class InstrumentedHttpClient implements AutoCloseable {
 
     public <T> HttpResult<T> send(HttpRequest request, HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {
         NetworkTiming timing = new NetworkTiming();
-        NetworkTimingContext.begin(timing);
 
         URI uri = request.uri();
         String host = uri.getHost();
@@ -34,7 +33,6 @@ public final class InstrumentedHttpClient implements AutoCloseable {
                 java.net.InetAddress.getAllByName(host);
                 timing.dnsLookupMs = (System.nanoTime() - dnsStart) / 1_000_000.0;
             } catch (java.net.UnknownHostException e) {
-                NetworkTimingContext.clear();
                 throw new IOException("DNS failed for " + host, e);
             }
         }
@@ -57,7 +55,6 @@ public final class InstrumentedHttpClient implements AutoCloseable {
             timing.responseBytes = body.length;
         }
 
-        NetworkTimingContext.clear();
         return new HttpResult<>(response, timing);
     }
 
