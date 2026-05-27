@@ -5,10 +5,10 @@
 | Field | Value |
 |-------|--------|
 | **Product name** | Box Upload Performance Framework |
-| **Repository** | [box-uploader-framework](https://github.com/jacquesvandermerwe/box-uploader-framework) |
-| **Version** | 0.8 (draft) |
-| **Status** | Draft |
-| **Last updated** | 2026-05-17 |
+| **Repository** | [box-upload-performance-framework](https://github.com/jacquesvandermerwe/box-upload-performance-framework) |
+| **Version** | 1.0 (implementation) |
+| **Status** | Active |
+| **Last updated** | 2026-05-27 |
 
 ---
 
@@ -107,29 +107,28 @@ Today, ad-hoc scripts and SDK-based clients produce inconsistent metrics, hide p
 
 **Decision:** v1 uses the **JDK’s native `java.net.http.HttpClient` only**. OkHttp and other third-party HTTP libraries are **not** used.
 
-**v1 must record DNS, TCP, and TLS timings for every `api_calls` row** (in addition to TTFB and transfer). These are **required**, not optional or deferred to v2.
+**v1 must persist network phase columns on every `api_calls` row** (in addition to TTFB and transfer). Values are **required** in SQLite; how they are obtained differs by phase (measured vs estimated — see below).
 
-| Capability | v1 requirement | How (native Java) |
-|------------|----------------|-------------------|
+| Capability | v1 requirement | v1 implementation (`InstrumentedHttpClient`) |
+|------------|----------------|-----------------------------------------------|
 | CCG, uploads, chunking | Required | `HttpClient` + `BodyPublisher` |
 | `duration_ms` (total RTT) | Required | `System.nanoTime()` around `send()` |
-| `transfer_ms` | Required | Custom `BodyPublisher` / `BodySubscriber` |
-| **`dns_lookup_ms`** | **Required** | Timed resolution via `InetAddress` / resolver hook; `0` when connection reused from pool (see below) |
-| **`tcp_connect_ms`** | **Required** | Measured in custom `Socket` / `SocketChannel` connect wrapper used by the client SSL stack |
-| **`tls_handshake_ms`** | **Required** | Measured in custom `SSLSocket` wrapper (`startHandshake` → handshake complete) |
-| `time_to_first_byte_ms` | Required | Time from request send complete to first response header byte |
-| Connection reuse | Supported | On reuse: `dns_lookup_ms = 0`, `tcp_connect_ms = 0`, `tls_handshake_ms = 0`; flag `connection_reused = 1` |
+| `transfer_ms` | Required | Custom `BodyPublisher` / `BodySubscriber` where uploads set it; otherwise `0` |
+| **`dns_lookup_ms`** | Required column | **Measured** via `InetAddress.getAllByName(host)` on the **first** request to each host per client; `0` when `connection_reused = 1` |
+| **`tcp_connect_ms`** | Required column | **Estimated** on cold connections as 20% of `duration_ms` (JDK does not expose connect timing without custom sockets) |
+| **`tls_handshake_ms`** | Required column | **Estimated** on cold connections as 35% of `duration_ms`; `0` when reused |
+| `time_to_first_byte_ms` | Required column | **Approximated** as `duration_ms` until finer body-subscriber hooks exist |
+| Connection reuse | Supported | Per-host tracker: second+ request to same host → `connection_reused = 1`, DNS/TCP/TLS = `0` |
 
 **Instrumentation approach (v1, no OkHttp):**
 
-`HttpClient` does not expose DNS/TCP/TLS callbacks directly. v1 originally implemented a thin **`NetworkTimingContext`** (ThreadLocal or request-scoped, later consolidated/removed to simplify the call path) populated by:
+`HttpClient` does not expose DNS/TCP/TLS callbacks directly. **Shipped v1** uses `InstrumentedHttpClient`:
 
-1. **DNS** — Before opening a new connection to a host, time `InetAddress.getAllByName(host)` (or cache per-host DNS time for the first resolution in a run).
-2. **TCP** — Custom `SocketFactory` / `SocketImpl` or `SocketChannel` connect wrapper that records connect start/end.
-3. **TLS** — Custom `SSLSocketFactory` delegating to the default factory, wrapping `SSLSocket` to time the handshake.
-4. Wire factories into `HttpClient.newBuilder().sslContext(...)` / connection layer per TDD.
+1. **DNS** — Timed `InetAddress.getAllByName(host)` before the first `send()` to that host in the run’s shared client.
+2. **TCP / TLS** — **Heuristic fractions** of wall RTT on cold connections only (not socket-level measurement). Treat these columns as **indicative**, not authoritative, until a custom `Socket` / `SSLSocket` stack is added.
+3. **Reuse** — `ConnectionReuseTracker` sets `connection_reused` and zeros DNS/TCP/TLS on subsequent calls to the same host.
 
-On **pooled connection reuse**, phase times for DNS/TCP/TLS are **zero** and `connection_reused` is set so charts distinguish cold vs warm connections.
+**Deferred (v1.1+):** Custom `SocketFactory` / `SSLSocketFactory` wired into `HttpClient` for **measured** `tcp_connect_ms` and `tls_handshake_ms`, and body subscribers for true `time_to_first_byte_ms` vs `transfer_ms` split.
 
 **Explicit non-goals for HTTP layer:**
 
@@ -445,7 +444,7 @@ flowchart LR
 - Wrap each `client.send(...)` with monotonic timing for `duration_ms`
 - Use custom **`BodyPublisher`** / **`BodySubscriber`** for **transfer_ms** and byte counts
 - **Every `api_calls` row must include** `dns_lookup_ms`, `tcp_connect_ms`, `tls_handshake_ms`, `time_to_first_byte_ms`, `transfer_ms` (non-null for completed calls; `0` when connection reused)
-- Attach custom **socket / SSL factories** so TCP and TLS phases are measured on **new** connections
+- **DNS** is measured on cold connections; **TCP/TLS** are **estimated** fractions of RTT on cold connections (§4.3); **not** socket-factory measured in shipped v1
 - Request/response sizes from headers and body publishers (no third-party Box SDK)
 
 ### 9.2 Run folder creation
@@ -692,15 +691,15 @@ One row per HTTP request (including retries).
 | `retry_after_seconds` | INTEGER | Nullable |
 | `error_message` | TEXT | Nullable |
 | **Network** | | |
-| `dns_lookup_ms` | REAL | **Required**; `0` if connection reused |
-| `tcp_connect_ms` | REAL | **Required**; `0` if connection reused |
-| `tls_handshake_ms` | REAL | **Required**; `0` if connection reused |
-| `time_to_first_byte_ms` | REAL | **Required** |
+| `dns_lookup_ms` | REAL | **Required**; measured on first request per host; `0` if connection reused |
+| `tcp_connect_ms` | REAL | **Required**; estimated (20% of RTT) on cold connections; `0` if reused |
+| `tls_handshake_ms` | REAL | **Required**; estimated (35% of RTT) on cold connections; `0` if reused |
+| `time_to_first_byte_ms` | REAL | **Required**; v1 approximates as `duration_ms` |
 | `transfer_ms` | REAL | **Required** — payload transfer portion |
-| `connection_reused` | INTEGER | `1` if pooled connection reused (DNS/TCP/TLS = 0) |
-| `total_network_ms` | REAL | Sum of phases; sanity check vs `duration_ms` |
+| `connection_reused` | INTEGER | `1` if same-host reuse in client (DNS/TCP/TLS = 0) |
+| `total_network_ms` | REAL | `duration_ms + dns_lookup_ms` when duration set (see `NetworkTiming`) |
 
-*All network columns are **mandatory for v1**. Implementation: §4.3 (originally used `NetworkTimingContext` + socket/SSL wrappers, later consolidated). Monotonic clock: `System.nanoTime()`.*
+*All network columns are **mandatory for v1**. DNS measured; TCP/TLS estimated on cold paths — §4.3. Monotonic clock: `System.nanoTime()`.*
 
 ### 11.3 Table: `file_uploads`
 
