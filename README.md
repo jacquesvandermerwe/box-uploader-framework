@@ -103,6 +103,7 @@ Console output uses `[box-upload-perf]` progress lines during the run. See [docs
 | `profile list` | List saved profiles |
 | `profile show <name>` | Show profile (secret redacted) |
 | `profile delete <name>` | Delete profile |
+| `failures` | List failed uploads for a past run (`--run-id`, optional `--results-dir`, `--limit`, `--verbose`) |
 
 ## Requirements
 

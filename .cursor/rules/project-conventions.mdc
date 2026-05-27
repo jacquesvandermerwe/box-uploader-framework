@@ -1,0 +1,26 @@
+---
+description: Box Upload Performance Framework — project constraints and conventions
+alwaysApply: true
+---
+
+# Box Upload Performance Framework
+
+Local Java 21 benchmark harness for Box upload throughput. See `docs/PRD.md` for product requirements.
+
+## Hard constraints
+
+- **Java 21+** only; call `AppConfig.requireJava21()` where the app entry already does.
+- **Upload/auth hot path:** `java.net.http.HttpClient` via `InstrumentedHttpClient` — **no Box SDK**, **no OkHttp**, **no Apache HttpClient**.
+- **Persistence:** SQLite per run (`MetricsDatabase`); do not introduce external metrics SaaS.
+- **Secrets:** Never commit profiles under `~/.box-upload-perf/` or `config/profiles/`; use `config/examples/` templates only.
+
+## Code changes
+
+- Adding fields to `AppConfig` → update `copy()`, `ConfigLoader`, example YAMLs, and wizard prompts as needed.
+- Network timing: DNS is measured; TCP/TLS on cold connections are **estimated** in `InstrumentedHttpClient` (see class Javadoc and PRD §4.3). Do not document them as socket-measured unless you implement that stack.
+- Match existing style: `final` classes, package layout (`box`, `http`, `metrics`, `upload`, `cli`, `config`, `charts`, `wizard`).
+
+## Verification
+
+- Run `mvn test` before finishing Java changes.
+- Prefer unit tests for pure logic; use `@TempDir` + `MetricsDatabase` for run artifact tests (see `RunOutputArtifactsTest`).

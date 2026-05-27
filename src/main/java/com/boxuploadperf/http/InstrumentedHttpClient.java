@@ -7,7 +7,27 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
+/**
+ * Wraps {@link HttpClient#send} with per-call timing stored in {@link NetworkTiming}.
+ *
+ * <p><b>v1 measurement model</b> (see docs/PRD.md §4.3):
+ * <ul>
+ *   <li>{@code duration_ms} — wall time around {@code send()}.</li>
+ *   <li>{@code dns_lookup_ms} — timed {@link java.net.InetAddress#getAllByName} on the first
+ *       request to each host in this client instance; {@code 0} when the connection is reused.</li>
+ *   <li>{@code tcp_connect_ms} / {@code tls_handshake_ms} — <em>estimated</em> as fractions of
+ *       {@code duration_ms} on cold connections only; {@code 0} when reused. The JDK client does
+ *       not expose true connect/handshake hooks without a custom socket stack (deferred).</li>
+ *   <li>{@code time_to_first_byte_ms} — approximated as {@code duration_ms} until response headers
+ *       are available (no body subscriber split in v1).</li>
+ * </ul>
+ */
 public final class InstrumentedHttpClient implements AutoCloseable {
+
+    /** Estimated TCP share of cold-connection RTT when connect timing is unavailable. */
+    static final double COLD_CONNECTION_TCP_FRACTION = 0.2;
+    /** Estimated TLS share of cold-connection RTT when handshake timing is unavailable. */
+    static final double COLD_CONNECTION_TLS_FRACTION = 0.35;
 
     private final HttpClient client;
     private final ConnectionReuseTracker reuseTracker = new ConnectionReuseTracker();
@@ -47,8 +67,8 @@ public final class InstrumentedHttpClient implements AutoCloseable {
         timing.transferMs = 0;
 
         if (!reused && timing.tcpConnectMs == 0) {
-            timing.tcpConnectMs = elapsedMs * 0.2;
-            timing.tlsHandshakeMs = elapsedMs * 0.35;
+            timing.tcpConnectMs = elapsedMs * COLD_CONNECTION_TCP_FRACTION;
+            timing.tlsHandshakeMs = elapsedMs * COLD_CONNECTION_TLS_FRACTION;
         }
 
         if (response.body() instanceof byte[] body) {
